@@ -17,7 +17,17 @@ RUN cmake -S src -B build -DLIGHTTPD_SOURCE_DIR=/lighttpd-1.4.75 -DLIGHTTPD_BUIL
 RUN cmake --build build
 
 
-FROM jitesoft/lighttpd:1.4.75 as runner
+FROM ubuntu:22.04 as runner
+
+# Install lighttpd
+COPY --from=builder lighttpd-build/build/lighttpd /usr/local/bin
+COPY --from=builder lighttpd-build/build/mod_*.so /usr/local/lib
 
 # Import module
 COPY --from=builder build/mod_authn_jwt.so /usr/local/lib
+
+# Configure lighttpd
+ADD lighttpd.conf /etc/lighttpd/lighttpd.conf
+ADD conf.d /etc/lighttpd/conf.d
+
+CMD lighttpd -D -f /etc/lighttpd/lighttpd.conf -m /usr/local/lib
