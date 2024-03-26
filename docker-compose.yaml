@@ -3,6 +3,9 @@ services:
     build: .
     volumes:
       - ${PWD}/index.html:/var/www/html/index.html
+      - ${PWD}/index.html:/var/www/html/plain.html
+      - ${PWD}/auth.conf:/etc/lighttpd/conf.d/auth.conf
+      - ${PWD}/lighttpd.user:/etc/lighttpd/lighttpd.user
     ports:
       - "80:80"
     networks:
@@ -11,6 +14,18 @@ services:
     image: quay.io/curl/curl:latest
     command: >
       --silent --show-error lighttpd:80
+    networks:
+      - web_server
+    depends_on:
+      lighttpd:
+        condition: service_started
+  test-plain-file:
+    image: quay.io/curl/curl:latest
+    command: >
+      --silent
+      --show-error
+      --user agent007:secret
+      lighttpd:80/plain.html
     networks:
       - web_server
     depends_on:
