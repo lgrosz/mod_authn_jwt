@@ -1,6 +1,8 @@
 services:
   lighttpd:
     build: .
+    volumes:
+      - ${PWD}/index.html:/var/www/html/index.html
     ports:
       - "80:80"
     networks:
