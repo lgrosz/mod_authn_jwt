@@ -10,7 +10,7 @@ services:
   test-health:
     image: quay.io/curl/curl:latest
     command: >
-      lighttpd:80
+      --silent --show-error lighttpd:80
     networks:
       - web_server
     depends_on:
