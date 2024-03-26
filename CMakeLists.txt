@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(lighttpd-mod_authn_jwt C)
 
-add_library(mod_authn_jwt SHARED mod_skeleton.c)
+add_library(mod_authn_jwt SHARED mod_authn_jwt.c)
 
 set(LIGHTTPD_SOURCE_DIR "" CACHE STRING "Path of lighttpd repository. \$\{LIGHTTPD_SOURCE_DIR}/src is expected to exist")
 set(LIGHTTPD_BUILD_DIR "" CACHE STRING "Path of lighttpd build directory. \$\{LIGHTTPD_BUILD_DIR}/build is expected to exist")

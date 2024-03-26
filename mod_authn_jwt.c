@@ -11,14 +11,7 @@
 #include "request.h"
 
 /**
- * this is a skeleton for a lighttpd plugin
- *
- * just replaces every occurrence of 'skeleton' by your plugin name
- *
- * e.g. in vim:
- *
- *   :%s/skeleton/myhandler/
- *
+ * this is an authentication module for jwts
  */
 
 
@@ -54,15 +47,15 @@ static void handler_ctx_free(handler_ctx *hctx) {
 
 
 /* init the plugin data */
-INIT_FUNC(mod_skeleton_init) {
+INIT_FUNC(mod_authn_jwt_init) {
     return ck_calloc(1, sizeof(plugin_data));
 }
 
 /* handle plugin config and check values */
 
-static void mod_skeleton_merge_config_cpv(plugin_config * const pconf, const config_plugin_value_t * const cpv) {
+static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const config_plugin_value_t * const cpv) {
     switch (cpv->k_id) { /* index into static config_plugin_keys_t cpk[] */
-      case 0: /* skeleton.array */
+      case 0: /* authn_jwt.array */
         pconf->match = cpv->v.a;
         break;
       default:/* should not happen */
@@ -70,24 +63,24 @@ static void mod_skeleton_merge_config_cpv(plugin_config * const pconf, const con
     }
 }
 
-static void mod_skeleton_merge_config(plugin_config * const pconf, const config_plugin_value_t *cpv) {
+static void mod_authn_jwt_merge_config(plugin_config * const pconf, const config_plugin_value_t *cpv) {
     do {
-        mod_skeleton_merge_config_cpv(pconf, cpv);
+        mod_authn_jwt_merge_config_cpv(pconf, cpv);
     } while ((++cpv)->k_id != -1);
 }
 
-static void mod_skeleton_patch_config(request_st * const r, plugin_data * const p) {
+static void mod_authn_jwt_patch_config(request_st * const r, plugin_data * const p) {
     p->conf = p->defaults; /* copy small struct instead of memcpy() */
     /*memcpy(&p->conf, &p->defaults, sizeof(plugin_config));*/
     for (int i = 1, used = p->nconfig; i < used; ++i) {
         if (config_check_cond(r, (uint32_t)p->cvlist[i].k_id))
-            mod_skeleton_merge_config(&p->conf, p->cvlist+p->cvlist[i].v.u2[0]);
+            mod_authn_jwt_merge_config(&p->conf, p->cvlist+p->cvlist[i].v.u2[0]);
     }
 }
 
-SETDEFAULTS_FUNC(mod_skeleton_set_defaults) {
+SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
-      { CONST_STR_LEN("skeleton.array"),
+      { CONST_STR_LEN("authn_jwt.array"),
         T_CONFIG_ARRAY_VLIST,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
@@ -96,20 +89,20 @@ SETDEFAULTS_FUNC(mod_skeleton_set_defaults) {
     };
 
     plugin_data * const p = p_d;
-    if (!config_plugin_values_init(srv, p, cpk, "mod_skeleton"))
+    if (!config_plugin_values_init(srv, p, cpk, "mod_authn_jwt"))
         return HANDLER_ERROR;
 
     /* initialize p->defaults from global config context */
     if (p->nconfig > 0 && p->cvlist->v.u2[1]) {
         const config_plugin_value_t *cpv = p->cvlist + p->cvlist->v.u2[0];
         if (-1 != cpv->k_id)
-            mod_skeleton_merge_config(&p->defaults, cpv);
+            mod_authn_jwt_merge_config(&p->defaults, cpv);
     }
 
     return HANDLER_GO_ON;
 }
 
-URIHANDLER_FUNC(mod_skeleton_uri_handler) {
+URIHANDLER_FUNC(mod_authn_jwt_uri_handler) {
     plugin_data * const p = p_d;
 
     /* determine whether or not module participates in request */
@@ -118,7 +111,7 @@ URIHANDLER_FUNC(mod_skeleton_uri_handler) {
     if (buffer_is_blank(&r->uri.path)) return HANDLER_GO_ON;
 
     /* get module config for request */
-    mod_skeleton_patch_config(r, p);
+    mod_authn_jwt_patch_config(r, p);
 
     if (NULL == p->conf.match
         || NULL == array_match_value_suffix(p->conf.match, &r->uri.path)) {
@@ -135,14 +128,14 @@ URIHANDLER_FUNC(mod_skeleton_uri_handler) {
 /* this function is called at dlopen() time and inits the callbacks */
 __attribute_cold__
 __declspec_dllexport__
-int mod_skeleton_plugin_init(plugin *p);
-int mod_skeleton_plugin_init(plugin *p) {
+int mod_authn_jwt_plugin_init(plugin *p);
+int mod_authn_jwt_plugin_init(plugin *p) {
 	p->version     = LIGHTTPD_VERSION_ID;
-	p->name        = "skeleton";
-	p->init        = mod_skeleton_init;
-	p->set_defaults= mod_skeleton_set_defaults;
+	p->name        = "authn_jwt";
+	p->init        = mod_authn_jwt_init;
+	p->set_defaults= mod_authn_jwt_set_defaults;
 
-	p->handle_uri_clean = mod_skeleton_uri_handler;
+	p->handle_uri_clean = mod_authn_jwt_uri_handler;
 
 	return 0;
 }
