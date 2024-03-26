@@ -9,6 +9,9 @@
 #include "buffer.h"
 #include "array.h"
 #include "request.h"
+#include "base64.h"
+#include "http_header.h"
+#include "mod_auth_api.h"
 
 /**
  * this is an authentication module for jwts
@@ -45,10 +48,19 @@ static void handler_ctx_free(handler_ctx *hctx) {
 
 #endif
 
+static handler_t mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
+
 
 /* init the plugin data */
 INIT_FUNC(mod_authn_jwt_init) {
-    return ck_calloc(1, sizeof(plugin_data));
+    static http_auth_scheme_t http_auth_scheme_bearer =
+        { "bearer", mod_auth_check_bearer, NULL };
+
+    /* register bearer scheme */
+    http_auth_scheme_bearer.p_d = p;
+    http_auth_scheme_set(&http_auth_scheme_bearer);
+
+    return p;
 }
 
 /* handle plugin config and check values */
@@ -124,6 +136,122 @@ URIHANDLER_FUNC(mod_authn_jwt_uri_handler) {
     return HANDLER_FINISHED;
 }
 
+/*
+ * auth schemes
+ */
+
+__attribute_cold__
+__attribute_noinline__
+static handler_t
+mod_auth_send_400_bad_request (request_st * const r)
+{
+    /* a field was missing or invalid */
+    r->http_status = 400; /* Bad Request */
+    r->handler_module = NULL;
+    return HANDLER_FINISHED;
+}
+
+__attribute_noinline__
+static handler_t
+mod_auth_send_401_unauthorized_bearer(request_st * const r, const buffer * const realm)
+{
+    log_notice(r->conf.errh, __FILE__, __LINE__, "Unauthorized bearer");
+
+    r->http_status = 401;
+    r->handler_module = NULL;
+
+    /* TODO See [RFC-6750 3.1](https://datatracker.ietf.org/doc/html/rfc6750#section-3.1) */
+
+    /* TODO *MAY* include a realm */
+    /* TODO *SHOULD* include error, description, and uri */
+
+    buffer_append_str3(
+            http_header_response_set_ptr(r, HTTP_HEADER_WWW_AUTHENTICATE,
+            CONST_STR_LEN("WWW-Authenticate")),
+            CONST_STR_LEN("Bearer realm=\""),
+            BUF_PTR_LEN(realm),
+            CONST_STR_LEN("\", charset=\"UTF-8\""));
+    return HANDLER_FINISHED;
+}
+
+__attribute_cold__
+static handler_t
+mod_auth_bearer_misconfigured (request_st * const r, const struct http_auth_backend_t * const backend)
+{
+    if (NULL == backend)
+        log_error(r->conf.errh, __FILE__, __LINE__,
+          "auth.backend not configured for %s", r->uri.path.ptr);
+    else
+        log_error(r->conf.errh, __FILE__, __LINE__,
+          "auth.require \"method\" => \"...\" is invalid "
+          "(try \"bearer\"?) for %s", r->uri.path.ptr);
+
+    r->http_status = 500;
+    r->handler_module = NULL;
+    return HANDLER_FINISHED;
+}
+
+static handler_t
+mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend)
+{
+    if (backend == NULL || backend->basic == NULL)
+        return mod_auth_bearer_misconfigured(r, backend);
+
+    /* Parse token from authorization header */
+    const buffer * const vb =
+        http_header_request_get(r, HTTP_HEADER_AUTHORIZATION,
+                CONST_STR_LEN("Authorization"));
+
+    if (NULL == vb || !buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
+        return mod_auth_send_401_unauthorized_bearer(r, require->realm);
+
+    size_t ulen = buffer_clen(vb) - (sizeof("Bearer ")-1);
+    char token[2048];
+
+    /* base64-decode Authorization into token string */
+    if (ulen > 2047) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Token too large");
+        return mod_auth_send_401_unauthorized_bearer(r, require->realm);
+    }
+
+    ulen = li_base64_dec((unsigned char *)token, sizeof(token),
+            vb->ptr+sizeof("Bearer ")-1, ulen, BASE64_STANDARD);
+
+    if (0 == ulen) {
+        log_error(r->conf.errh, __FILE__, __LINE__,
+                "decoding base64-string failed %s", vb->ptr+sizeof("Bearer ")-1);
+        return mod_auth_send_400_bad_request(r);
+    }
+
+    token[ulen] = '\0';
+
+    /* TODO Here is where we can do authentication caching */
+
+    const buffer tokenb = { token, ulen+1, 0 };
+    handler_t rc = backend->basic(r, backend->p_d, require, &tokenb, "");
+
+    switch (rc) {
+        case HANDLER_GO_ON:
+        case HANDLER_WAIT_FOR_EVENT:
+        case HANDLER_FINISHED:
+            break;
+        default:
+            /* TODO
+             * - include "error" attribute and give correct codes
+             *   - invalid_request
+             *   - invalid_token
+             *   - insufficient_scope
+             * - include "error_description" attribute (developer-readable)
+             * - include "error_uri" attribute (human-readable)
+             *
+             * We probably need to check plugin data or similar for this operation
+             */
+            rc = mod_auth_send_401_unauthorized_bearer(r, require->realm);
+            break;
+    }
+
+    return rc;
+}
 
 /* this function is called at dlopen() time and inits the callbacks */
 __attribute_cold__

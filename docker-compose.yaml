@@ -10,7 +10,7 @@ services:
       - "80:80"
     networks:
       - web_server
-  test-health:
+  test-no-token:
     image: quay.io/curl/curl:latest
     command: >
       --silent --show-error lighttpd:80
@@ -19,13 +19,42 @@ services:
     depends_on:
       lighttpd:
         condition: service_started
-  test-plain-file:
+  test-bearer-no-token:
     image: quay.io/curl/curl:latest
     command: >
       --silent
       --show-error
-      --user agent007:secret
-      lighttpd:80/plain.html
+      -H "Authorization: Bearer "
+      lighttpd:80
+    networks:
+      - web_server
+    depends_on:
+      lighttpd:
+        condition: service_started
+  test-bearer-not-b64-token:
+    image: quay.io/curl/curl:latest
+    command: >
+      --silent
+      --show-error
+      -H "Authorization: Bearer token"
+      lighttpd:80
+    networks:
+      - web_server
+    depends_on:
+      lighttpd:
+        condition: service_started
+  test-bearer-b64-fake-token:
+    image: quay.io/curl/curl:latest
+    command: >
+      --silent
+      --show-error
+      -H "Authorization: Bearer dG9rZW4="
+      lighttpd:80
+    networks:
+      - web_server
+    depends_on:
+      lighttpd:
+        condition: service_started
     networks:
       - web_server
     depends_on:
