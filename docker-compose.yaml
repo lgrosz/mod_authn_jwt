@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  lighttpd:
+    build: .
+    ports:
+      - "80:80"
+    networks:
+      - web_server
+  test-health:
+    image: quay.io/curl/curl:latest
+    command: >
+      lighttpd:80
+    networks:
+      - web_server
+    depends_on:
+      lighttpd:
+        condition: service_started
+networks:
+  web_server:

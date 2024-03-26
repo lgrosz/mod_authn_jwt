@@ -15,3 +15,9 @@ RUN cmake --build lighttpd-build
 COPY . src
 RUN cmake -S src -B build -DLIGHTTPD_SOURCE_DIR=/lighttpd-1.4.75 -DLIGHTTPD_BUILD_DIR=/lighttpd-build
 RUN cmake --build build
+
+
+FROM jitesoft/lighttpd:1.4.75 as runner
+
+# Import module
+COPY --from=builder build/mod_authn_jwt.so /usr/local/lib
