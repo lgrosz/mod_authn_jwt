@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <jwt.h>
 
 #include "plugin.h"
 
@@ -50,15 +51,28 @@ static void handler_ctx_free(handler_ctx *hctx) {
 
 static handler_t mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
 
+static handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *);
 
 /* init the plugin data */
 INIT_FUNC(mod_authn_jwt_init) {
     static http_auth_scheme_t http_auth_scheme_bearer =
         { "bearer", mod_auth_check_bearer, NULL };
 
+    /* NOTE Since http_auth_backend_t is limited to basic and digest handlers,
+     * the bearer handler will just be assigned as the "basic" handler. It's
+     * implementation will assume that the "user" parameter will be a token */
+    static http_auth_backend_t http_auth_backend_jwt =
+        { "jwt", mod_authn_jwt_bearer, NULL, NULL };
+
+    plugin_data *p = ck_calloc(1, sizeof(plugin_data));
+
     /* register bearer scheme */
     http_auth_scheme_bearer.p_d = p;
     http_auth_scheme_set(&http_auth_scheme_bearer);
+
+    /* register jwt backend */
+    http_auth_backend_jwt.p_d = p;
+    http_auth_backend_set(&http_auth_backend_jwt);
 
     return p;
 }
@@ -112,28 +126,6 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     }
 
     return HANDLER_GO_ON;
-}
-
-URIHANDLER_FUNC(mod_authn_jwt_uri_handler) {
-    plugin_data * const p = p_d;
-
-    /* determine whether or not module participates in request */
-
-    if (NULL != r->handler_module) return HANDLER_GO_ON;
-    if (buffer_is_blank(&r->uri.path)) return HANDLER_GO_ON;
-
-    /* get module config for request */
-    mod_authn_jwt_patch_config(r, p);
-
-    if (NULL == p->conf.match
-        || NULL == array_match_value_suffix(p->conf.match, &r->uri.path)) {
-        return HANDLER_GO_ON;
-    }
-
-    /* module participates in request; business logic here */
-
-    r->http_status = 403; /* example: reject request with 403 Forbidden */
-    return HANDLER_FINISHED;
 }
 
 /*
@@ -253,6 +245,30 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
     return rc;
 }
 
+handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *)
+{
+    plugin_data *p = (plugin_data *)p_d;
+
+    mod_authn_jwt_patch_config(r, p);
+
+    handler_t rc = HANDLER_ERROR;
+
+    // Read token into jwt_t
+    jwt_t *jwt = NULL;
+    if (0 != jwt_decode(&jwt, token->ptr, NULL, 0) || jwt == NULL) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Could not parse token as jwt: %s", token->ptr);
+        goto jwt_finish;
+    }
+
+    log_notice(r->conf.errh, __FILE__, __LINE__, "Valid JWT: %s", token->ptr);
+    rc = HANDLER_GO_ON;
+
+jwt_finish:
+    jwt_free(jwt);
+
+    return rc;
+}
+
 /* this function is called at dlopen() time and inits the callbacks */
 __attribute_cold__
 __declspec_dllexport__
@@ -262,8 +278,6 @@ int mod_authn_jwt_plugin_init(plugin *p) {
 	p->name        = "authn_jwt";
 	p->init        = mod_authn_jwt_init;
 	p->set_defaults= mod_authn_jwt_set_defaults;
-
-	p->handle_uri_clean = mod_authn_jwt_uri_handler;
 
 	return 0;
 }

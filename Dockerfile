@@ -2,6 +2,7 @@ FROM ubuntu:22.04 as builder
 
 RUN apt-get update && apt-get install -y \
     cmake \
+    libjwt-dev \
     libpcre2-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,6 +19,10 @@ RUN cmake --build build
 
 
 FROM ubuntu:22.04 as runner
+
+RUN apt-get update && apt-get install -y \
+    libjwt0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install lighttpd
 COPY --from=builder lighttpd-build/build/lighttpd /usr/local/bin
