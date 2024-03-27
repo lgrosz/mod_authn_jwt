@@ -317,12 +317,18 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         goto jwt_valid_finish;
     }
 
-    unsigned int err = jwt_validate(jwt, jwt_valid);
-    if (0 != err) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt: %s", token->ptr);
+    // TODO These fields should be propogated as error data to the client
+    unsigned int errno;
 
-        // TODO These fields should be propogated as error data to the client
-        log_error(r->conf.errh, __FILE__, __LINE__, "Error fields: %x", err);
+    errno = jwt_valid_set_now(jwt_valid, time(NULL));
+    if (0 != errno) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: 0x%x", errno);
+        goto jwt_valid_finish;
+    }
+
+    errno = jwt_validate(jwt, jwt_valid);
+    if (0 != errno) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: 0x%x", token->ptr, errno);
         goto jwt_valid_finish;
     }
 
