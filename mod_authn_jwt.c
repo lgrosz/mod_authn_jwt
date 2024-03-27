@@ -8,7 +8,6 @@
 
 #include "log.h"
 #include "buffer.h"
-#include "array.h"
 #include "request.h"
 #include "http_header.h"
 #include "mod_auth_api.h"
@@ -21,7 +20,7 @@
 /* plugin config for all request/connections */
 
 typedef struct {
-    const array *match;
+    const buffer *keyfile;
 } plugin_config;
 
 typedef struct {
@@ -80,8 +79,8 @@ INIT_FUNC(mod_authn_jwt_init) {
 
 static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const config_plugin_value_t * const cpv) {
     switch (cpv->k_id) { /* index into static config_plugin_keys_t cpk[] */
-      case 0: /* authn_jwt.array */
-        pconf->match = cpv->v.a;
+      case 0: /* auth.backend.jwt.keyfile */
+        pconf->keyfile = cpv->v.b;
         break;
       default:/* should not happen */
         return;
@@ -105,8 +104,8 @@ static void mod_authn_jwt_patch_config(request_st * const r, plugin_data * const
 
 SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
-      { CONST_STR_LEN("authn_jwt.array"),
-        T_CONFIG_ARRAY_VLIST,
+      { CONST_STR_LEN("auth.backend.jwt.keyfile"),
+        T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
@@ -116,6 +115,22 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     plugin_data * const p = p_d;
     if (!config_plugin_values_init(srv, p, cpk, "mod_authn_jwt"))
         return HANDLER_ERROR;
+
+    /* process and validate config directives
+     * (init i to 0 if global context; to 1 to skip empty global context) */
+    for (int i = !p->cvlist[0].v.u2[1]; i < p->nconfig; ++i) {
+        config_plugin_value_t *cpv = p->cvlist + p->cvlist[i].v.u2[0];
+        for (; -1 != cpv->k_id; ++cpv) {
+            switch (cpv->k_id) {
+                case 0: /* auth.backend.jwt.keyfile */
+                    if (buffer_is_blank(cpv->v.b))
+                        cpv->v.b = NULL;
+                    break;
+                default:/* should not happen */
+                    break;
+            }
+        }
+    }
 
     /* initialize p->defaults from global config context */
     if (p->nconfig > 0 && p->cvlist->v.u2[1]) {
@@ -242,10 +257,30 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     handler_t rc = HANDLER_ERROR;
 
-    // Read token into jwt_t
+    /* Read token into jwt_t */
     jwt_t *jwt = NULL;
-    if (0 != jwt_decode(&jwt, token->ptr, NULL, 0) || jwt == NULL) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Could not parse token as jwt: %s", token->ptr);
+    size_t keylength;
+    unsigned char key[10240];
+    char *keyhandle = NULL;
+    const buffer *keyfile = p->conf.keyfile;
+
+    if (keyfile) {
+        FILE *fp_pub_key = fopen(p->conf.keyfile->ptr, "r");
+
+        if (fp_pub_key) {
+            keylength = fread(key, 1, sizeof(key), fp_pub_key);
+            fclose(fp_pub_key);
+            key[keylength] = '\0';
+            keyhandle = key;
+            log_notice(r->conf.errh, __FILE__, __LINE__, "pub key loaded %s (%zu)", keyfile->ptr, keylength);
+        } else {
+            log_error(r->conf.errh, __FILE__, __LINE__, "could not open %s", keyfile->ptr);
+            return HANDLER_ERROR;
+        }
+    }
+
+    if (0 != jwt_decode(&jwt, token->ptr, keyhandle, keylength) || jwt == NULL) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to decode jwt: %s", token->ptr);
         goto jwt_finish;
     }
 

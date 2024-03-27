@@ -6,6 +6,7 @@ services:
       - ${PWD}/index.html:/var/www/html/plain.html
       - ${PWD}/auth.conf:/etc/lighttpd/conf.d/auth.conf
       - ${PWD}/lighttpd.user:/etc/lighttpd/lighttpd.user
+      - ${PWD}/publickey.crt:/etc/ssl/publickey.crt
     ports:
       - "80:80"
     networks:
@@ -55,7 +56,7 @@ services:
     depends_on:
       lighttpd:
         condition: service_started
-  test-bearer-b64-token:
+  test-badly-signed-token:
     image: quay.io/curl/curl:latest
     command: >
       --silent
@@ -67,6 +68,12 @@ services:
     depends_on:
       lighttpd:
         condition: service_started
+  test-correctly-signed-token:
+    image: quay.io/curl/curl:latest
+    command: >
+      --silent
+      --show-error
+      -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3MTE1MTA3MDN9.Dx2xFnbqxKARX0v0n6eo-xFlEuloxtH-JB0fOOzsaM7FfCysRYEVjUAw4kos8YUrZbpysAY1rsAvDlsw-IxholrKjS2CkgxbeDEguHnJlveZj-nL9YUpPCMCa5fWwLcKa1ZcI80Dg4gDgZNgdb3l-BnCOAM7daNCVMYfp3UHVe8kRszA3QBSCNqvtnN4uORekxu58c7o13dlsDzDvPlTuhQclsBNQSxEgPNoBLAVsXbe7Dp3DrN2V1s4qGnjRs3a8ddPO1kcPLM-l99mZFKK202E11R2LbSgx94ZfxaKyGS3Y6epvVMlHN_f3GVGo4y5hx2hDTa3qBDT0t3F5cbFUg"
       lighttpd:80
     networks:
       - web_server
