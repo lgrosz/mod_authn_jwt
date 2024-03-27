@@ -6,6 +6,7 @@
 
 #include "plugin.h"
 
+#include "base.h"
 #include "log.h"
 #include "buffer.h"
 #include "request.h"
@@ -21,6 +22,7 @@
 
 typedef struct {
     const buffer *keyfile;
+    jwt_alg_t alg;
 } plugin_config;
 
 typedef struct {
@@ -82,6 +84,10 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
       case 0: /* auth.backend.jwt.keyfile */
         pconf->keyfile = cpv->v.b;
         break;
+      case 1: /* auth.backend.jwt.algorithm */
+        if (cpv->vtype != T_CONFIG_LOCAL) break;
+        pconf->alg = cpv->v.u;
+        break;
       default:/* should not happen */
         return;
     }
@@ -102,9 +108,14 @@ static void mod_authn_jwt_patch_config(request_st * const r, plugin_data * const
     }
 }
 
+static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, const uint32_t algstrlen, server * const srv);
+
 SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
       { CONST_STR_LEN("auth.backend.jwt.keyfile"),
+        T_CONFIG_STRING,
+        T_CONFIG_SCOPE_CONNECTION }
+     ,{ CONST_STR_LEN("auth.backend.jwt.algorithm"),
         T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
@@ -126,6 +137,10 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                     if (buffer_is_blank(cpv->v.b))
                         cpv->v.b = NULL;
                     break;
+                case 1: /* auth.backend.jwt.algorithm */
+                    cpv->v.u = mod_authn_jwt_process_algorithm(BUF_PTR_LEN(cpv->v.b), srv);
+                    cpv->vtype = T_CONFIG_LOCAL;
+                    break;
                 default:/* should not happen */
                     break;
             }
@@ -140,6 +155,17 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     }
 
     return HANDLER_GO_ON;
+}
+
+static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, const uint32_t algstrlen, server * const srv)
+{
+    jwt_alg_t alg = jwt_str_alg(algstr);
+
+    if (JWT_ALG_INVAL == alg) {
+        log_notice(srv->errh, __FILE__, __LINE__, "Could not process algorithm :%s", algstr);
+    }
+
+    return alg;
 }
 
 /*
@@ -284,8 +310,27 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         goto jwt_finish;
     }
 
+    jwt_valid_t *jwt_valid = NULL;
+
+    if (0 != jwt_valid_new(&jwt_valid, p->conf.alg) || jwt_valid == NULL) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to create jwt_valid");
+        goto jwt_valid_finish;
+    }
+
+    unsigned int err = jwt_validate(jwt, jwt_valid);
+    if (0 != err) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt: %s", token->ptr);
+
+        // TODO These fields should be propogated as error data to the client
+        log_error(r->conf.errh, __FILE__, __LINE__, "Error fields: %x", err);
+        goto jwt_valid_finish;
+    }
+
     log_notice(r->conf.errh, __FILE__, __LINE__, "Valid JWT: %s", token->ptr);
     rc = HANDLER_GO_ON;
+
+jwt_valid_finish:
+    jwt_valid_free(jwt_valid);
 
 jwt_finish:
     jwt_free(jwt);
