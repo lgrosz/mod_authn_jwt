@@ -10,7 +10,6 @@
 #include "buffer.h"
 #include "array.h"
 #include "request.h"
-#include "base64.h"
 #include "http_header.h"
 #include "mod_auth_api.h"
 
@@ -200,22 +199,12 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
     size_t ulen = buffer_clen(vb) - (sizeof("Bearer ")-1);
     char token[2048];
 
-    /* base64-decode Authorization into token string */
     if (ulen > 2047) {
         log_error(r->conf.errh, __FILE__, __LINE__, "Token too large");
         return mod_auth_send_401_unauthorized_bearer(r, require->realm);
     }
 
-    ulen = li_base64_dec((unsigned char *)token, sizeof(token),
-            vb->ptr+sizeof("Bearer ")-1, ulen, BASE64_STANDARD);
-
-    if (0 == ulen) {
-        log_error(r->conf.errh, __FILE__, __LINE__,
-                "decoding base64-string failed %s", vb->ptr+sizeof("Bearer ")-1);
-        return mod_auth_send_400_bad_request(r);
-    }
-
-    token[ulen] = '\0';
+    strcpy(token, vb->ptr+sizeof("Bearer ")-1);
 
     /* TODO Here is where we can do authentication caching */
 
