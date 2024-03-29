@@ -111,3 +111,46 @@ def test_nonexpired():
     )
 
     assert response.status_code == 200
+
+def test_nbfbad():
+    """
+    Tests nbf claim failure
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "nbf": datetime.now(tz=timezone.utc) + timedelta(hours=1)
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_nbfgood():
+    """
+    Tests nbf claim success
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "nbf": datetime.now(tz=timezone.utc) - timedelta(hours=1)
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
