@@ -27,6 +27,7 @@ typedef struct {
     unsigned int nbf_leeway;
     const buffer *issuer;
     const buffer *subject;
+    const buffer *audience;
 } plugin_config;
 
 typedef struct {
@@ -104,6 +105,9 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
       case 5: /* auth.backend.jwt.subject */
         pconf->subject = cpv->v.b;
         break;
+      case 6: /* auth.backend.jwt.audience */
+        pconf->audience = cpv->v.b;
+        break;
       default:/* should not happen */
         return;
     }
@@ -146,6 +150,9 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
      ,{ CONST_STR_LEN("auth.backend.jwt.subject"),
         T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
+     ,{ CONST_STR_LEN("auth.backend.jwt.audience"),
+        T_CONFIG_STRING,
+        T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
         T_CONFIG_SCOPE_UNSET }
@@ -177,6 +184,10 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                         cpv->v.b = NULL;
                     break;
                 case 5: /* auth.backend.jwt.subject */
+                    if (buffer_is_blank(cpv->v.b))
+                        cpv->v.b = NULL;
+                    break;
+                case 6: /* auth.backend.jwt.audience */
                     if (buffer_is_blank(cpv->v.b))
                         cpv->v.b = NULL;
                     break;
@@ -386,6 +397,14 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.subject->ptr);
         if (0 != errno) {
             log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set subject to %s: %s", p->conf.subject->ptr, jwt_exception_str(errno));
+            goto jwt_valid_finish;
+        }
+    }
+
+    if (NULL != p->conf.audience) {
+        errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.audience->ptr);
+        if (0 != errno) {
+            log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set audience to %s: %s", p->conf.audience->ptr, jwt_exception_str(errno));
             goto jwt_valid_finish;
         }
     }

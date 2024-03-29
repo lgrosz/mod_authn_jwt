@@ -240,3 +240,46 @@ def test_subjectmatch():
     )
 
     assert response.status_code == 200
+
+def test_audiencemismatch():
+    """
+    Tests audience mismatch
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "iss": "incorrect-audience"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/audience",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_audiencematch():
+    """
+    Tests audience match
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "iss": "correct-audience"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/audience",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
