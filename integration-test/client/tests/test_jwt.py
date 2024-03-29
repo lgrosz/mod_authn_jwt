@@ -197,3 +197,46 @@ def test_issuermatch():
     )
 
     assert response.status_code == 200
+
+def test_subjectmismatch():
+    """
+    Tests subject mismatch
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "iss": "incorrect-subject"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/subject",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_subjectmatch():
+    """
+    Tests subject match
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "iss": "correct-subject"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/subject",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200

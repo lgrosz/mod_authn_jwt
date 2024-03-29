@@ -26,6 +26,7 @@ typedef struct {
     unsigned int exp_leeway;
     unsigned int nbf_leeway;
     const buffer *issuer;
+    const buffer *subject;
 } plugin_config;
 
 typedef struct {
@@ -100,6 +101,9 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
       case 4: /* auth.backend.jwt.issuer */
         pconf->issuer = cpv->v.b;
         break;
+      case 5: /* auth.backend.jwt.subject */
+        pconf->subject = cpv->v.b;
+        break;
       default:/* should not happen */
         return;
     }
@@ -139,6 +143,9 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
      ,{ CONST_STR_LEN("auth.backend.jwt.issuer"),
         T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
+     ,{ CONST_STR_LEN("auth.backend.jwt.subject"),
+        T_CONFIG_STRING,
+        T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
         T_CONFIG_SCOPE_UNSET }
@@ -166,6 +173,10 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                 case 3: /* auth.backend.jwt.nbf-leeway */
                     break;
                 case 4: /* auth.backend.jwt.issuer */
+                    if (buffer_is_blank(cpv->v.b))
+                        cpv->v.b = NULL;
+                    break;
+                case 5: /* auth.backend.jwt.subject */
                     if (buffer_is_blank(cpv->v.b))
                         cpv->v.b = NULL;
                     break;
@@ -367,6 +378,14 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.issuer->ptr);
         if (0 != errno) {
             log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set issuer to %s: %s", p->conf.issuer->ptr, jwt_exception_str(errno));
+            goto jwt_valid_finish;
+        }
+    }
+
+    if (NULL != p->conf.subject) {
+        errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.subject->ptr);
+        if (0 != errno) {
+            log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set subject to %s: %s", p->conf.subject->ptr, jwt_exception_str(errno));
             goto jwt_valid_finish;
         }
     }
