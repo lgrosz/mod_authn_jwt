@@ -251,8 +251,11 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
         http_header_request_get(r, HTTP_HEADER_AUTHORIZATION,
                 CONST_STR_LEN("Authorization"));
 
-    if (NULL == vb || !buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
+    if (NULL == vb)
         return mod_auth_send_401_unauthorized_bearer(r, require->realm);
+
+    if (!buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
+        return mod_auth_send_400_bad_request(r);
 
     size_t ulen = buffer_clen(vb) - (sizeof("Bearer ")-1);
     char token[2048];
