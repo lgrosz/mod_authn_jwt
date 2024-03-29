@@ -459,3 +459,23 @@ def test_nestedjsonclaim():
     )
 
     assert response.status_code == 200
+
+def test_booleanworkaround():
+    """
+    Tests boolean claim workaround
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "bool": True
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/boolean-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
