@@ -278,3 +278,53 @@ def test_audiencematch():
     )
 
     assert response.status_code == 200
+
+def test_missingstringclaim():
+    """
+    Tests missing string claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/string-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"some": "payload"}, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_incorrectsingstringclaim():
+    """
+    Tests incorrect string claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/string-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"string-claim": "incorrect"}, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_correctsingstringclaim():
+    """
+    Tests incorrect string claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/string-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"string-claim": "correct"}, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200

@@ -1,5 +1,6 @@
 #include "first.h"
 
+#include <array.h>
 #include <stdlib.h>
 #include <string.h>
 #include <jwt.h>
@@ -28,6 +29,7 @@ typedef struct {
     const buffer *issuer;
     const buffer *subject;
     const buffer *audience;
+    const array *claims;
 } plugin_config;
 
 typedef struct {
@@ -108,6 +110,9 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
       case 6: /* auth.backend.jwt.audience */
         pconf->audience = cpv->v.b;
         break;
+      case 7: /* auth.backend.jwt.claims */
+        pconf->claims = cpv->v.a;
+        break;
       default:/* should not happen */
         return;
     }
@@ -153,6 +158,9 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
      ,{ CONST_STR_LEN("auth.backend.jwt.audience"),
         T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
+     ,{ CONST_STR_LEN("auth.backend.jwt.claims"),
+        T_CONFIG_ARRAY_KVANY,
+        T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
         T_CONFIG_SCOPE_UNSET }
@@ -191,6 +199,8 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                     if (buffer_is_blank(cpv->v.b))
                         cpv->v.b = NULL;
                     break;
+                case 7: /* auth.backend.jwt.claims */
+                       break;
                 default:/* should not happen */
                     break;
             }
@@ -413,6 +423,26 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     if (0 != errno) {
         log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: %s", jwt_exception_str(errno));
         goto jwt_valid_finish;
+    }
+
+    const array *claims = p->conf.claims;
+    for (uint32_t i = 0; NULL != claims && i < claims->used; ++i) {
+        const data_unset * const du = claims->data[i];
+
+        const buffer * const key = &du->key;
+        const data_type_t type = du->type;
+
+        if (type == TYPE_STRING) {
+            const data_string * const ds = (const data_string *)du;
+
+            errno = jwt_valid_add_grant(jwt_valid, key->ptr, (&ds->value)->ptr);
+            if (0 != errno) {
+                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %s", key->ptr, (&ds->value)->ptr);
+                goto jwt_valid_finish;
+            }
+        } else {
+            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim", key->ptr);
+        }
     }
 
     errno = jwt_validate(jwt, jwt_valid);
