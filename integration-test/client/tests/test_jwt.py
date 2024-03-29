@@ -68,3 +68,46 @@ def test_validjwt():
     )
 
     assert response.status_code == 200
+
+def test_expired():
+    """
+    Test an expired jwt
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "exp": datetime.now(tz=timezone.utc) - timedelta(hours=1)
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_nonexpired():
+    """
+    Test a non-expired jwt
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "exp": datetime.now(tz=timezone.utc) + timedelta(minutes=1)
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
