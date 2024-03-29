@@ -437,14 +437,14 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
             errno = jwt_valid_add_grant(jwt_valid, key->ptr, (&ds->value)->ptr);
             if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %s", key->ptr, (&ds->value)->ptr);
+                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %s: %s", key->ptr, (&ds->value)->ptr, jwt_exception_str(errno));
                 goto jwt_valid_finish;
             }
         } else if (type == TYPE_INTEGER) {
             const data_integer * const di = (const data_integer *)du;
             errno = jwt_valid_add_grant_int(jwt_valid, key->ptr, di->value);
             if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %d", key->ptr, di->value);
+                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %d: %s", key->ptr, di->value, jwt_exception_str(errno));
                 goto jwt_valid_finish;
             }
         } else {
