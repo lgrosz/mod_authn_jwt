@@ -1,0 +1,37 @@
+services:
+  keygen:
+    build: keygen
+    volumes:
+      - public_key:/public
+      - private_key:/private
+  server:
+    build:
+      context: ..
+      target: runner
+    healthcheck:
+      test: ["CMD", "curl", "-s", "server"]
+      interval: 1s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 1s
+    depends_on:
+      keygen:
+        condition: service_started
+    volumes:
+      - public_key:/etc/ssl
+      - ${PWD}/index.html:/var/www/html/index.html
+      - ${PWD}/auth.conf:/etc/lighttpd/conf.d/auth.conf
+  client:
+    build: client
+    command: tail -f /dev/null
+    stop_grace_period: 1s
+    depends_on:
+      keygen:
+        condition: service_started
+      server:
+        condition: service_healthy
+    volumes:
+      - private_key:/etc/ssl
+volumes:
+  public_key:
+  private_key:
