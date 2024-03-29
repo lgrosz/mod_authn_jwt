@@ -378,3 +378,84 @@ def test_correctsingintegerclaim():
     )
 
     assert response.status_code == 200
+
+def test_missingjsonclaim():
+    """
+    Tests missing json claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/json-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"some": "payload"}, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_partialjsonclaim():
+    """
+    Tests partial match json claim
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "integer": 1
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/json-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_correctjsonclaim():
+    """
+    Tests correct json claim
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "integer": 1,
+        "string": "str"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/json-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+
+def test_nestedjsonclaim():
+    """
+    Tests correct json claim
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "outer": {
+            "claim": "valid"
+        }
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/nested-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
