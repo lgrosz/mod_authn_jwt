@@ -342,25 +342,25 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     errno = jwt_valid_set_exp_leeway(jwt_valid, p->conf.exp_leeway);
     if (0 != errno) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set exp_leeway to %d: 0x%x", p->conf.exp_leeway, errno);
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set exp_leeway to %d: %s", p->conf.exp_leeway, jwt_exception_str(errno));
         goto jwt_valid_finish;
     }
 
     errno = jwt_valid_set_nbf_leeway(jwt_valid, p->conf.nbf_leeway);
     if (0 != errno) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set nbf_leeway to %d: 0x%x", p->conf.nbf_leeway, errno);
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set nbf_leeway to %d: %s", p->conf.nbf_leeway, jwt_exception_str(errno));
         goto jwt_valid_finish;
     }
 
     errno = jwt_valid_set_now(jwt_valid, time(NULL));
     if (0 != errno) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: 0x%x", errno);
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: %s", jwt_exception_str(errno));
         goto jwt_valid_finish;
     }
 
     errno = jwt_validate(jwt, jwt_valid);
     if (0 != errno) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: 0x%x", token->ptr, errno);
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, jwt_exception_str(errno));
         goto jwt_valid_finish;
     }
 
