@@ -328,3 +328,53 @@ def test_correctsingstringclaim():
     )
 
     assert response.status_code == 200
+
+def test_missingintegerclaim():
+    """
+    Tests missing integer claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/integer-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"some": "payload"}, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_incorrectsingintegerclaim():
+    """
+    Tests incorrect integer claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/integer-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"integer-claim": 1 }, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_correctsingintegerclaim():
+    """
+    Tests incorrect integer claim
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/integer-claim",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({"integer-claim": 2 }, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
