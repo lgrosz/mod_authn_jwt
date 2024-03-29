@@ -25,6 +25,7 @@ typedef struct {
     jwt_alg_t alg;
     unsigned int exp_leeway;
     unsigned int nbf_leeway;
+    const buffer *issuer;
 } plugin_config;
 
 typedef struct {
@@ -96,6 +97,9 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
       case 3: /* auth.backend.jwt.nbf-leeway */
         pconf->nbf_leeway = cpv->v.u;
         break;
+      case 4: /* auth.backend.jwt.issuer */
+        pconf->issuer = cpv->v.b;
+        break;
       default:/* should not happen */
         return;
     }
@@ -132,6 +136,9 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
      ,{ CONST_STR_LEN("auth.backend.jwt.nbf-leeway"),
         T_CONFIG_INT,
         T_CONFIG_SCOPE_CONNECTION }
+     ,{ CONST_STR_LEN("auth.backend.jwt.issuer"),
+        T_CONFIG_STRING,
+        T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
         T_CONFIG_SCOPE_UNSET }
@@ -157,6 +164,10 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                     break;
                 case 2: /* auth.backend.jwt.exp-leeway */
                 case 3: /* auth.backend.jwt.nbf-leeway */
+                    break;
+                case 4: /* auth.backend.jwt.issuer */
+                    if (buffer_is_blank(cpv->v.b))
+                        cpv->v.b = NULL;
                     break;
                 default:/* should not happen */
                     break;
@@ -350,6 +361,14 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     if (0 != errno) {
         log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set nbf_leeway to %d: %s", p->conf.nbf_leeway, jwt_exception_str(errno));
         goto jwt_valid_finish;
+    }
+
+    if (NULL != p->conf.issuer) {
+        errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.issuer->ptr);
+        if (0 != errno) {
+            log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set issuer to %s: %s", p->conf.issuer->ptr, jwt_exception_str(errno));
+            goto jwt_valid_finish;
+        }
     }
 
     errno = jwt_valid_set_now(jwt_valid, time(NULL));

@@ -154,3 +154,46 @@ def test_nbfgood():
     )
 
     assert response.status_code == 200
+
+def test_issuermismatch():
+    """
+    Tests issuer mismatch
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "iss": "incorrect-issuer"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/issuer",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+    assert 'WWW-Authenticate' in response.headers
+
+def test_issuermatch():
+    """
+    Tests issuer match
+    """
+    import jwt
+    from keys import PKEY
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "iss": "correct-issuer"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/issuer",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
