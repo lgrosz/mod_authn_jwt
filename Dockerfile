@@ -37,6 +37,7 @@ RUN cmake --build build
 FROM ubuntu:22.04 as runner
 
 RUN apt-get update && apt-get install -y \
+    curl \
     libjansson4 \
     && rm -rf /var/lib/apt/lists/*
 
