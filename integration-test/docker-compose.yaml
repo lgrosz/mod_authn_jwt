@@ -19,7 +19,7 @@ services:
         condition: service_started
     volumes:
       - public_key:/etc/ssl
-      - ${PWD}/index.html:/var/www/html/index.html
+      - ${PWD}/www:/var/www
       - ${PWD}/auth.conf:/etc/lighttpd/conf.d/auth.conf
   client:
     build: client
