@@ -161,7 +161,6 @@ def test_issuermismatch():
     """
     import jwt
     from keys import PKEY
-    from datetime import datetime, timedelta, timezone
 
     payload = {
         "iss": "incorrect-issuer"
@@ -183,7 +182,6 @@ def test_issuermatch():
     """
     import jwt
     from keys import PKEY
-    from datetime import datetime, timedelta, timezone
 
     payload = {
         "iss": "correct-issuer"
@@ -204,7 +202,6 @@ def test_subjectmismatch():
     """
     import jwt
     from keys import PKEY
-    from datetime import datetime, timedelta, timezone
 
     payload = {
         "iss": "incorrect-subject"
@@ -247,7 +244,6 @@ def test_audiencemismatch():
     """
     import jwt
     from keys import PKEY
-    from datetime import datetime, timedelta, timezone
 
     payload = {
         "iss": "incorrect-audience"
@@ -269,7 +265,6 @@ def test_audiencematch():
     """
     import jwt
     from keys import PKEY
-    from datetime import datetime, timedelta, timezone
 
     payload = {
         "iss": "correct-audience"
