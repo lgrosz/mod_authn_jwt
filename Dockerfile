@@ -50,10 +50,13 @@ COPY --from=builder /usr/local/lib/libjwt.so /usr/lib
 
 # Install lighttpd
 COPY --from=builder lighttpd-build/build/lighttpd /usr/local/bin
-COPY --from=builder lighttpd-build/build/mod_*.so /usr/local/lib
+
+# Install modules
+RUN install -d /usr/local/lib/lighttpd
+COPY --from=builder lighttpd-build/build/mod_*.so /usr/local/lib/lighttpd
 
 # Configure lighttpd
 ADD lighttpd.conf /etc/lighttpd/lighttpd.conf
 ADD conf.d /etc/lighttpd/conf.d
 
-CMD lighttpd -D -f /etc/lighttpd/lighttpd.conf -m /usr/local/lib
+CMD lighttpd -D -f /etc/lighttpd/lighttpd.conf
