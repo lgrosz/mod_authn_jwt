@@ -1,0 +1,40 @@
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -45,6 +45,7 @@
+ option(WITH_LIBUNWIND "with libunwind to print backtraces in asserts [default: off]")
+ option(WITH_MAXMINDDB "with MaxMind GeoIP2-support mod_maxminddb [default: off]")
+ option(WITH_SASL "with SASL-support for mod_authn_sasl [default: off]")
++option(WITH_JWT "with JWT authentication support through mod_authn_jwt [defaults: off]")
+ option(WITH_XXHASH "with system-provided xxhash [default: off]")
+ 
+ if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
+@@ -637,6 +638,16 @@
+ 	unset(HAVE_SASL)
+ endif()
+ 
++if (WITH_JWT)
++	check_include_files(jwt.h HAVE_JWT_H)
++	if(HAVE_JWT_H)
++		check_library_exists(jwt jwt_valid_new "" HAVE_JWT)
++	endif()
++else()
++	unset(HAVE_JWT_H)
++	unset(HAVE_JWT)
++endif()
++
+ 
+ if(WITH_XML)
+ 	xconfig(xml2-config XML2_LDFLAGS XML2_CFLAGS)
+@@ -1103,6 +1114,12 @@
+ 	add_and_install_library(mod_authn_sasl "mod_authn_sasl.c")
+ 	set(L_MOD_AUTHN_SASL ${L_MOD_AUTHN_SASL} sasl2)
+ 	target_link_libraries(mod_authn_sasl ${L_MOD_AUTHN_SASL})
++endif()
++
++if(WITH_JWT)
++	add_and_install_library(mod_authn_jwt "mod_authn_jwt.c")
++	set(L_MOD_AUTHN_JWT ${L_MOD_AUTHN_JWT} jwt)
++	target_link_libraries(mod_authn_jwt ${L_MOD_AUTHN_JWT})
+ endif()
+ 
+ if(HAVE_ZLIB_H OR HAVE_ZSTD_H OR HAVE_BZLIB_H OR HAVE_BROTLI OR HAVE_LIBDEFLATE)
