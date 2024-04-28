@@ -22,17 +22,21 @@ RUN \
     ninja && \
     ninja install
 
-# Download and build lighttpd
+# Download lighttpd
 ADD https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-1.4.75.tar.gz lighttpd-1.4.75.tar.gz
 RUN tar -xzf lighttpd-1.4.75.tar.gz
-RUN cmake -S lighttpd-1.4.75 -B lighttpd-build
-RUN cmake --build lighttpd-build
 
-# Build project
+# Patch lighttpd
 COPY . src
-RUN cmake -S src -B build -DLIGHTTPD_SOURCE_DIR=/lighttpd-1.4.75 -DLIGHTTPD_BUILD_DIR=/lighttpd-build
-RUN cmake --build build
+RUN cp src/mod_authn_jwt.c /lighttpd-1.4.75/src
+RUN cp src/CMakeLists.txt.patch /lighttpd-1.4.75
+RUN \
+    cd /lighttpd-1.4.75 && \
+    patch -p1 <CMakeLists.txt.patch
 
+# Build lighttpd
+RUN cmake -S lighttpd-1.4.75 -B lighttpd-build -DWITH_JWT=ON
+RUN cmake --build lighttpd-build
 
 FROM ubuntu:22.04 as runner
 
@@ -47,9 +51,6 @@ COPY --from=builder /usr/local/lib/libjwt.so /usr/lib
 # Install lighttpd
 COPY --from=builder lighttpd-build/build/lighttpd /usr/local/bin
 COPY --from=builder lighttpd-build/build/mod_*.so /usr/local/lib
-
-# Import module
-COPY --from=builder build/mod_authn_jwt.so /usr/local/lib
 
 # Configure lighttpd
 ADD lighttpd.conf /etc/lighttpd/lighttpd.conf
