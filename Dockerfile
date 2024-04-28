@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install libjwt
-COPY --from=builder /usr/local/lib/libjwt.so /usr/local/lib
+COPY --from=builder /usr/local/lib/libjwt.so /usr/lib
 
 # Install lighttpd
 COPY --from=builder lighttpd-build/build/lighttpd /usr/local/bin
