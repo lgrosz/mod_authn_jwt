@@ -137,7 +137,7 @@ static void mod_authn_jwt_patch_config(request_st * const r, plugin_data * const
     }
 }
 
-static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, const uint32_t algstrlen, server * const srv);
+static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, server * const srv);
 
 SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
@@ -188,7 +188,7 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                         cpv->v.b = NULL;
                     break;
                 case 1: /* auth.backend.jwt.algorithm */
-                    cpv->v.u = mod_authn_jwt_process_algorithm(BUF_PTR_LEN(cpv->v.b), srv);
+                    cpv->v.u = mod_authn_jwt_process_algorithm(cpv->v.b->ptr, srv);
                     cpv->vtype = T_CONFIG_LOCAL;
                     break;
                 case 2: /* auth.backend.jwt.exp-leeway */
@@ -226,7 +226,7 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     return HANDLER_GO_ON;
 }
 
-static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, const uint32_t algstrlen, server * const srv)
+static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, server * const srv)
 {
     jwt_alg_t alg = jwt_str_alg(algstr);
 
