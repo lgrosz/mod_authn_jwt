@@ -295,6 +295,8 @@ mod_auth_bearer_misconfigured (request_st * const r, const struct http_auth_back
 static handler_t
 mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend)
 {
+    UNUSED(p_d);
+
     if (backend == NULL || backend->basic == NULL)
         return mod_auth_bearer_misconfigured(r, backend);
 
@@ -349,6 +351,8 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
 
 handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *)
 {
+    UNUSED(require);
+
     plugin_data *p = (plugin_data *)p_d;
 
     mod_authn_jwt_patch_config(r, p);
