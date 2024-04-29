@@ -1,0 +1,55 @@
+name: Build
+
+on:
+  push:
+    branches: [ "develop" ]
+  pull_request:
+    branches: [ "develop" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libjansson-dev
+      - name: Checkout libjwt
+        uses: actions/checkout@v4
+        with:
+          repository: "benmcollins/libjwt"
+          ref: "v1.17.0"
+          path: "libjwt"
+      - name: Configure libjwt
+        run: |
+          install -d libjwt-build
+          cmake -B libjwt-build -S libjwt -DBUILD_SHARED_LIBS=ON
+      - name: Build libjwt
+        run: |
+          cmake --build libjwt-build
+      - name: Install libjwt
+        run: |
+          sudo cmake --install libjwt-build
+      - name: Checkout mod_authn_jwt
+        uses: actions/checkout@v4
+        with:
+          path: "mod_authn_jwt"
+      - name: Checkout lighttpd
+        uses: actions/checkout@v4
+        with:
+          repository: "lighttpd/lighttpd1.4"
+          ref: "lighttpd-1.4.75"
+          path: "lighttpd"
+      - name: Patch lighttpd
+        run: |
+          cp mod_authn_jwt/mod_authn_jwt.c lighttpd/src
+          cp mod_authn_jwt/*.patch lighttpd
+          cd lighttpd
+          patch -p1 <CMakeLists.txt.patch
+      - name: Configure
+        run: |
+          install -d build
+          cmake -B build -S lighttpd -DWITH_JWT=ON
+      - name: Build
+        run: |
+          cmake --build build
