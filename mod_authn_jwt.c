@@ -364,7 +364,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     jwt_t *jwt = NULL;
     size_t keylength;
     unsigned char key[10240];
-    char *keyhandle = NULL;
+    unsigned char *keyhandle = NULL;
     const buffer *keyfile = p->conf.keyfile;
 
     if (keyfile) {
