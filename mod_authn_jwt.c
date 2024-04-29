@@ -59,7 +59,7 @@ static void handler_ctx_free(handler_ctx *hctx) {
 
 static handler_t mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
 
-static handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *);
+static handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd);
 
 /* init the plugin data */
 INIT_FUNC(mod_authn_jwt_init) {
@@ -349,9 +349,10 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
     return rc;
 }
 
-handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *)
+handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd)
 {
     UNUSED(require);
+    UNUSED(pswd);
 
     plugin_data *p = (plugin_data *)p_d;
 
