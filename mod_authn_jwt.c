@@ -443,26 +443,26 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     for (uint32_t i = 0; NULL != claims && i < claims->used; ++i) {
         const data_unset * const du = claims->data[i];
 
-        const buffer * const key = &du->key;
+        const buffer * const claim = &du->key;
         const data_type_t type = du->type;
 
         if (type == TYPE_STRING) {
             const data_string * const ds = (const data_string *)du;
 
-            errno = jwt_valid_add_grant(jwt_valid, key->ptr, (&ds->value)->ptr);
+            errno = jwt_valid_add_grant(jwt_valid, claim->ptr, (&ds->value)->ptr);
             if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %s: %s", key->ptr, (&ds->value)->ptr, jwt_exception_str(errno));
+                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %s: %s", claim->ptr, (&ds->value)->ptr, jwt_exception_str(errno));
                 goto jwt_valid_finish;
             }
         } else if (type == TYPE_INTEGER) {
             const data_integer * const di = (const data_integer *)du;
-            errno = jwt_valid_add_grant_int(jwt_valid, key->ptr, di->value);
+            errno = jwt_valid_add_grant_int(jwt_valid, claim->ptr, di->value);
             if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %d: %s", key->ptr, di->value, jwt_exception_str(errno));
+                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %d: %s", claim->ptr, di->value, jwt_exception_str(errno));
                 goto jwt_valid_finish;
             }
         } else {
-            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim", key->ptr);
+            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim", claim->ptr);
         }
     }
 
