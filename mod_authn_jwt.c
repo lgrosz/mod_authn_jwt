@@ -418,7 +418,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
                 goto jwt_valid_finish;
             }
         } else {
-            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim", claim->ptr);
+            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim %s", claim->ptr);
         }
     }
 
