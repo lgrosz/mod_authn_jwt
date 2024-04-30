@@ -12,12 +12,13 @@ jobs:
       matrix:
         build_system:
           - cmake
+          - meson
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y libjansson-dev
+          sudo apt install -y libjansson-dev meson
       - name: Checkout libjwt
         uses: actions/checkout@v4
         with:
@@ -33,7 +34,7 @@ jobs:
           cmake --build libjwt-build
       - name: Install libjwt
         run: |
-          sudo cmake --install libjwt-build
+          sudo cmake --install libjwt-build --prefix /usr
       - name: Checkout mod_authn_jwt
         uses: actions/checkout@v4
         with:
@@ -50,6 +51,7 @@ jobs:
           cp mod_authn_jwt/*.patch lighttpd
           cd lighttpd
           patch -p1 <CMakeLists.txt.patch
+          patch -p1 <meson.patch
       - if: matrix.build_system == 'cmake'
         name: Configure with CMake
         run: |
@@ -63,3 +65,17 @@ jobs:
         name: Test with CMake
         run: |
           ctest --test-dir build
+      - if: matrix.build_system == 'meson'
+        name: Configure with Meson
+        run: |
+          meson setup -Dwith_jwt=enabled build lighttpd
+      - if: matrix.build_system == 'meson'
+        name: Build with Ninja
+        run: |
+          cd build
+          ninja
+      - if: matrix.build_system == 'meson'
+        name: Test with Meson
+        run: |
+          cd build
+          meson test
