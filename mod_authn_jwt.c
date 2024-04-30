@@ -429,9 +429,6 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
         if (type == TYPE_STRING) {
             const data_string * const ds = (const data_string *)du;
-
-            log_notice(r->conf.errh, __FILE__, __LINE__, "Add json claim: %s", (&ds->value)->ptr);
-
             errno = jwt_valid_add_grants_json(jwt_valid, (&ds->value)->ptr);
             if (0 != errno) {
                 log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add json claim %s: %s", (&ds->value)->ptr, jwt_exception_str(errno));
@@ -448,7 +445,6 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         goto jwt_valid_finish;
     }
 
-    log_notice(r->conf.errh, __FILE__, __LINE__, "Valid JWT: %s", token->ptr);
     rc = HANDLER_GO_ON;
 
 jwt_valid_finish:
