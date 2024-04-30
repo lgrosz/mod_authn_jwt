@@ -1,6 +1,5 @@
 #include "first.h"
 
-#include <array.h>
 #include <stdlib.h>
 #include <string.h>
 #include <jwt.h>
@@ -8,6 +7,8 @@
 #include "plugin.h"
 
 #include "base.h"
+#include "array.h"
+#include "fdevent.h"
 #include "log.h"
 #include "buffer.h"
 #include "request.h"
@@ -328,37 +329,28 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     UNUSED(pswd);
 
     plugin_data *p = (plugin_data *)p_d;
-
     mod_authn_jwt_patch_config(r, p);
 
     handler_t rc = HANDLER_ERROR;
+    unsigned int keylength = 0;
+    unsigned char *keyhandle = NULL;
+
+    if (p->conf.keyfile) {
+        off_t lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
+        keyhandle = fdevent_load_file(p->conf.keyfile, &lim, r->conf.errh, malloc, free);
+        if (NULL == keyhandle)
+            return HANDLER_ERROR;
+        keylength = (unsigned int)lim;
+    }
 
     /* Read token into jwt_t */
     jwt_t *jwt = NULL;
-    size_t keylength;
-    unsigned char key[10240];
-    unsigned char *keyhandle = NULL;
-    const buffer *keyfile = p->conf.keyfile;
-
-    if (keyfile) {
-        FILE *fp_pub_key = fopen(p->conf.keyfile->ptr, "r");
-
-        if (fp_pub_key) {
-            keylength = fread(key, 1, sizeof(key), fp_pub_key);
-            fclose(fp_pub_key);
-            key[keylength] = '\0';
-            keyhandle = key;
-            log_notice(r->conf.errh, __FILE__, __LINE__, "pub key loaded %s (%zu)", keyfile->ptr, keylength);
-        } else {
-            log_error(r->conf.errh, __FILE__, __LINE__, "could not open %s", keyfile->ptr);
-            return HANDLER_ERROR;
-        }
-    }
-
     if (0 != jwt_decode(&jwt, token->ptr, keyhandle, keylength) || jwt == NULL) {
         log_error(r->conf.errh, __FILE__, __LINE__, "Failed to decode jwt: %s", token->ptr);
+        free(keyhandle);
         goto jwt_finish;
     }
+    free(keyhandle);
 
     jwt_valid_t *jwt_valid = NULL;
 
