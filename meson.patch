@@ -1,0 +1,39 @@
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -109,6 +109,11 @@
+ 	value: 'disabled',
+ 	description: 'with SASL support for mod_authn_sasl [default: off]',
+ )
++option('with_jwt',
++	type: 'feature',
++	value: 'disabled',
++	description: 'with JWT authentication support through mod_authn_jwt [defaults: off]',
++)
+ #option('with_valgrind',
+ #	type: 'boolean',
+ #	value: false,
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -439,6 +439,9 @@
+ 
+ libsasl = dependency('libsasl2', required: get_option('with_sasl'))
+ conf_data.set('HAVE_SASL', libsasl.found())
++
++libjwt = compiler.find_library('jwt', required: get_option('with_jwt'), has_headers: [ 'jwt.h' ])
++conf_data.set('HAVE_JWT', libjwt.found())
+ 
+ #if get_option('with_valgrind')
+ #endif
+@@ -866,6 +869,12 @@
+ 	]
+ endif
+ 
++if libjwt.found()
++	modules += [
++		[ 'mod_authn_jwt', [ 'mod_authn_jwt.c' ], libjwt ]
++	]
++endif
++
+ plugin_suffix = []
+ if (host_machine.system() == 'darwin')
+ 	plugin_suffix = 'so'  # use "so" instead of "dylib"
