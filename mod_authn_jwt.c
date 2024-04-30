@@ -14,13 +14,6 @@
 #include "http_header.h"
 #include "mod_auth_api.h"
 
-/**
- * this is an authentication module for jwts
- */
-
-
-/* plugin config for all request/connections */
-
 typedef struct {
     const buffer *keyfile;
     jwt_alg_t alg;
@@ -40,28 +33,10 @@ typedef struct {
 } plugin_data;
 
 
-#if 0 /* (needed if module keeps state for request) */
-
-typedef struct {
-    size_t foo;
-} handler_ctx;
-
-__attribute_returns_nonnull__
-static handler_ctx * handler_ctx_init(void) {
-    return ck_calloc(1, sizeof(handler_ctx));
-}
-
-static void handler_ctx_free(handler_ctx *hctx) {
-    free(hctx);
-}
-
-#endif
-
 static handler_t mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
 
 static handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd);
 
-/* init the plugin data */
 INIT_FUNC(mod_authn_jwt_init) {
     static http_auth_scheme_t http_auth_scheme_bearer =
         { "bearer", mod_auth_check_bearer, NULL };
@@ -84,8 +59,6 @@ INIT_FUNC(mod_authn_jwt_init) {
 
     return p;
 }
-
-/* handle plugin config and check values */
 
 static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const config_plugin_value_t * const cpv) {
     switch (cpv->k_id) { /* index into static config_plugin_keys_t cpk[] */
@@ -504,7 +477,6 @@ jwt_finish:
     return rc;
 }
 
-/* this function is called at dlopen() time and inits the callbacks */
 __attribute_cold__
 __declspec_dllexport__
 int mod_authn_jwt_plugin_init(plugin *p);
