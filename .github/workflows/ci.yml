@@ -8,6 +8,10 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        build_system:
+          - cmake
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -46,13 +50,16 @@ jobs:
           cp mod_authn_jwt/*.patch lighttpd
           cd lighttpd
           patch -p1 <CMakeLists.txt.patch
-      - name: Configure
+      - if: matrix.build_system == 'cmake'
+        name: Configure with CMake
         run: |
           install -d build
           cmake -B build -S lighttpd -DWITH_JWT=ON
-      - name: Build
+      - if: matrix.build_system == 'cmake'
+        name: Build with CMake
         run: |
           cmake --build build
-      - name: Test
+      - if: matrix.build_system == 'cmake'
+        name: Test with CMake
         run: |
           ctest --test-dir build
