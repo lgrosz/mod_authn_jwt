@@ -398,12 +398,6 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         }
     }
 
-    errno = jwt_valid_set_now(jwt_valid, (time_t)log_epoch_secs);
-    if (0 != errno) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: %s", jwt_exception_str(errno));
-        goto jwt_valid_finish;
-    }
-
     const array *claims = p->conf.claims;
     for (uint32_t i = 0; NULL != claims && i < claims->used; ++i) {
         const data_unset * const du = claims->data[i];
@@ -442,6 +436,12 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
                 goto jwt_valid_finish;
             }
         }
+    }
+
+    errno = jwt_valid_set_now(jwt_valid, (time_t)log_epoch_secs);
+    if (0 != errno) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: %s", jwt_exception_str(errno));
+        goto jwt_valid_finish;
     }
 
     errno = jwt_validate(jwt, jwt_valid);
