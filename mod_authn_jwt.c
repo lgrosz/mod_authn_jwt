@@ -17,15 +17,8 @@
 #include "mod_auth_api.h"
 
 typedef struct {
+    jwt_valid_t *jwt_valid;
     const buffer *keyfile;
-    jwt_alg_t alg;
-    unsigned int exp_leeway;
-    unsigned int nbf_leeway;
-    const buffer *issuer;
-    const buffer *subject;
-    const buffer *audience;
-    const array *claims;
-    const array *json_claims;
 } plugin_config;
 
 typedef struct {
@@ -71,7 +64,10 @@ FREE_FUNC(mod_authn_jwt_cleanup) {
         for (; -1 != cpv->k_id; ++cpv) {
             if (cpv->vtype != T_CONFIG_LOCAL || NULL == cpv->v.v) continue;
             switch (cpv->k_id) {
-              case 0: /* auth.backend.jwt.keyfile */
+              case 0: /* auth.backend.jwt.opts */
+                jwt_valid_free(cpv->v.v);
+                break;
+              case 1: /* auth.backend.jwt.keyfile */
                 buffer_free(cpv->v.v);
                 break;
               default:
@@ -83,33 +79,13 @@ FREE_FUNC(mod_authn_jwt_cleanup) {
 
 static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const config_plugin_value_t * const cpv) {
     switch (cpv->k_id) { /* index into static config_plugin_keys_t cpk[] */
-      case 0: /* auth.backend.jwt.keyfile */
+      case 0: /* auth.backend.jwt.opts */
+        if (cpv->vtype != T_CONFIG_LOCAL) break;
+        pconf->jwt_valid = cpv->v.v;
+        break;
+      case 1: /* auth.backend.jwt.keyfile */
         if (cpv->vtype != T_CONFIG_LOCAL) break;
         pconf->keyfile = cpv->v.v;
-        break;
-      case 1: /* auth.backend.jwt.algorithm */
-        pconf->alg = cpv->v.u;
-        break;
-      case 2: /* auth.backend.jwt.exp-leeway */
-        pconf->exp_leeway = cpv->v.u;
-        break;
-      case 3: /* auth.backend.jwt.nbf-leeway */
-        pconf->nbf_leeway = cpv->v.u;
-        break;
-      case 4: /* auth.backend.jwt.issuer */
-        pconf->issuer = cpv->v.b;
-        break;
-      case 5: /* auth.backend.jwt.subject */
-        pconf->subject = cpv->v.b;
-        break;
-      case 6: /* auth.backend.jwt.audience */
-        pconf->audience = cpv->v.b;
-        break;
-      case 7: /* auth.backend.jwt.claims */
-        pconf->claims = cpv->v.a;
-        break;
-      case 8: /* auth.backend.jwt.json-claims */
-        pconf->json_claims = cpv->v.a;
         break;
       default:/* should not happen */
         return;
@@ -134,41 +110,125 @@ static void mod_authn_jwt_patch_config(request_st * const r, plugin_data * const
 __attribute_cold__
 __attribute_noinline__
 static int
-mod_authn_jwt_perror(request_st * const r, const int errnum, const char * const label, const char * const value)
+mod_authn_jwt_perror(log_error_st * const errh, const int errnum, const char * const label, const char * const value)
 {
     errno = errnum;
-    log_perror(r->conf.errh, __FILE__, __LINE__, "Failed to %s %s", label, value);
+    log_perror(errh, __FILE__, __LINE__, "Failed to %s %s", label, value);
     return errnum;
+}
+
+static jwt_valid_t *
+mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
+{
+    jwt_valid_t *jwt_valid = NULL;
+    const data_unset *du;
+    int rc;
+    jwt_alg_t alg;
+
+    du = array_get_element_klen(opts, CONST_STR_LEN("algorithm"));
+    if (!du || du->type != TYPE_STRING
+        || (alg = jwt_str_alg(((const data_string *)du)->value.ptr)) == JWT_ALG_INVAL) {
+        log_error(errh, __FILE__, __LINE__, "Invalid or missing auth.backend.jwt.opts \"algorithm\"");
+        return NULL;
+    }
+
+    rc = jwt_valid_new(&jwt_valid, alg);
+    if (0 != rc) {
+        mod_authn_jwt_perror(errh, rc, "create", "jwt_valid");
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < opts->used; ++i) {
+        du = opts->data[i];
+        if (0 == strcmp(du->key.ptr, "algorithm"))
+            continue; /*(already handled above)*/
+        else if (0 == strcmp(du->key.ptr, "exp-leeway")
+                 && (rc = config_plugin_value_to_int32(du, -1)) != -1)
+            jwt_valid_set_exp_leeway(jwt_valid, rc);
+        else if (0 == strcmp(du->key.ptr, "nbf-leeway")
+                 && (rc = config_plugin_value_to_int32(du, -1)) != -1)
+            jwt_valid_set_nbf_leeway(jwt_valid, rc);
+        else if (0 == strcmp(du->key.ptr, "issuer") && du->type == TYPE_STRING) {
+            const char *data = ((const data_string *)du)->value.ptr;
+            rc = jwt_valid_add_grant(jwt_valid, "iss", data);
+            if (0 != rc) {
+                mod_authn_jwt_perror(errh, rc, "set issuer to", data);
+                break;
+            }
+        }
+        else if (0 == strcmp(du->key.ptr, "subject") && du->type == TYPE_STRING) {
+            const char *data = ((const data_string *)du)->value.ptr;
+            rc = jwt_valid_add_grant(jwt_valid, "sub", data);
+            if (0 != rc) {
+                mod_authn_jwt_perror(errh, rc, "set subject to", data);
+                break;
+            }
+        }
+        else if (0 == strcmp(du->key.ptr, "audience") && du->type == TYPE_STRING) {
+            /* future: might support array value in addition to string value */
+            const char *data = ((const data_string *)du)->value.ptr;
+            rc = jwt_valid_add_grant(jwt_valid, "aud", data);
+            if (0 != rc) {
+                mod_authn_jwt_perror(errh, rc, "set audience to", data);
+                break;
+            }
+        }
+        else if (0 == strcmp(du->key.ptr, "claims") && du->type == TYPE_ARRAY
+                 && array_is_kvany(&((const data_array *)du)->value)) {
+            const array * const claims = &((const data_array *)du)->value;
+            for (uint32_t j = 0; j < claims->used; ++j) {
+                du = claims->data[j];
+                rc = 0;
+                if (du->type == TYPE_STRING)
+                    rc = jwt_valid_add_grant(jwt_valid, du->key.ptr, ((const data_string *)du)->value.ptr);
+                else if (du->type == TYPE_INTEGER)
+                    rc = jwt_valid_add_grant_int(jwt_valid, du->key.ptr, ((const data_integer *)du)->value);
+                else
+                    log_notice(errh, __FILE__, __LINE__, "Unsupported type, ignoring claim %s", du->key.ptr);
+                if (0 != rc) {
+                    mod_authn_jwt_perror(errh, rc, "add claim", du->key.ptr);
+                    break;
+                }
+            }
+            if (0 != rc)
+                break;
+        }
+        else if (0 == strcmp(du->key.ptr, "json-claims") && du->type == TYPE_ARRAY
+                 && array_is_vlist(&((const data_array *)du)->value)) {
+            const array * const json_claims = &((const data_array *)du)->value;
+            for (uint32_t j = 0; j < json_claims->used; ++j) {
+                const data_string * const ds = (const data_string *)json_claims->data[j];
+                rc = jwt_valid_add_grants_json(jwt_valid, ds->value.ptr);
+                if (0 != rc) {
+                    mod_authn_jwt_perror(errh, rc, "add json claim", ds->value.ptr);
+                    break;
+                }
+            }
+            if (0 != rc)
+                break;
+        }
+        else {
+            log_error(errh, __FILE__, __LINE__, "Invalid syntax for auth.backend.jwt.opts \"%s\"", du->key.ptr);
+            rc = -1;
+            break;
+        }
+    }
+
+    if (0 != rc) {
+        jwt_valid_free(jwt_valid);
+        return NULL;
+    }
+
+    return jwt_valid;
 }
 
 SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
-      { CONST_STR_LEN("auth.backend.jwt.keyfile"),
-        T_CONFIG_STRING,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.algorithm"),
-        T_CONFIG_STRING,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.exp-leeway"),
-        T_CONFIG_INT,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.nbf-leeway"),
-        T_CONFIG_INT,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.issuer"),
-        T_CONFIG_STRING,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.subject"),
-        T_CONFIG_STRING,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.audience"),
-        T_CONFIG_STRING,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.claims"),
+      { CONST_STR_LEN("auth.backend.jwt.opts"),
         T_CONFIG_ARRAY_KVANY,
         T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.json-claims"),
-        T_CONFIG_ARRAY_VLIST,
+     ,{ CONST_STR_LEN("auth.backend.jwt.keyfile"),
+        T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
@@ -185,61 +245,28 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
         config_plugin_value_t *cpv = p->cvlist + p->cvlist[i].v.u2[0];
         for (; -1 != cpv->k_id; ++cpv) {
             switch (cpv->k_id) {
-                case 0: /* auth.backend.jwt.keyfile */
-                    if (buffer_is_blank(cpv->v.b))
-                        cpv->v.v = buffer_init();
-                    else {
-                        off_t lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
-                        char *data = fdevent_load_file(cpv->v.b->ptr, &lim, srv->errh, malloc, free);
-                        if (NULL == data)
-                            return HANDLER_ERROR;
-                        buffer * const b = buffer_init();
-                        b->ptr = data;
-                        b->used = (uint32_t)lim+1;
-                        cpv->v.v = b;
-                    }
-                    cpv->vtype = T_CONFIG_LOCAL;
-                    break;
-                case 1: /* auth.backend.jwt.algorithm */
-                    {
-                        jwt_alg_t alg = jwt_str_alg(cpv->v.b->ptr);
-                        if (JWT_ALG_INVAL == alg) {
-                            log_error(srv->errh, __FILE__, __LINE__, "Could not process algorithm: %s", cpv->v.b->ptr);
-                            return HANDLER_ERROR;
-                        }
-                        cpv->v.u = (unsigned int)alg;
-                    }
-                    break;
-                case 2: /* auth.backend.jwt.exp-leeway */
-                case 3: /* auth.backend.jwt.nbf-leeway */
-                    break;
-                case 4: /* auth.backend.jwt.issuer */
-                    if (buffer_is_blank(cpv->v.b))
-                        cpv->v.b = NULL;
-                    break;
-                case 5: /* auth.backend.jwt.subject */
-                    if (buffer_is_blank(cpv->v.b))
-                        cpv->v.b = NULL;
-                    break;
-                case 6: /* auth.backend.jwt.audience */
-                    if (buffer_is_blank(cpv->v.b))
-                        cpv->v.b = NULL;
-                    break;
-                case 7: /* auth.backend.jwt.claims */
-                    for (uint32_t j = 0; j < cpv->v.a->used; ++j) {
-                        const data_unset * const du = cpv->v.a->data[j];
-                        if (du->type != TYPE_STRING && du->type != TYPE_INTEGER)
-                            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim %s", du->key.ptr);
-                    }
-                    if (0 == cpv->v.a->used)
-                        cpv->v.a = NULL;
-                    break;
-                case 8: /* auth.backend.jwt.json-claims */
-                    if (0 == cpv->v.a->used)
-                        cpv->v.a = NULL;
-                    break;
-                default:/* should not happen */
-                    break;
+              case 0: /* auth.backend.jwt.opts */
+                cpv->v.v = mod_authn_jwt_parse_opts(cpv->v.a, srv->errh);
+                if (NULL == cpv->v.v) return HANDLER_ERROR;
+                cpv->vtype = T_CONFIG_LOCAL;
+                break;
+              case 1: /* auth.backend.jwt.keyfile */
+                if (buffer_is_blank(cpv->v.b))
+                    cpv->v.v = buffer_init();
+                else {
+                    off_t lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
+                    char *data = fdevent_load_file(cpv->v.b->ptr, &lim, srv->errh, malloc, free);
+                    if (NULL == data)
+                        return HANDLER_ERROR;
+                    buffer * const b = buffer_init();
+                    b->ptr = data;
+                    b->used = (uint32_t)lim+1;
+                    cpv->v.v = b;
+                }
+                cpv->vtype = T_CONFIG_LOCAL;
+                break;
+              default:/* should not happen */
+                break;
             }
         }
     }
@@ -370,7 +397,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     plugin_data *p = (plugin_data *)p_d;
     mod_authn_jwt_patch_config(r, p);
-    if (NULL == p->conf.keyfile)
+    if (NULL == p->conf.keyfile || NULL == p->conf.jwt_valid)
         return mod_authn_jwt_send_500_server_error(r); /*(misconfigured)*/
 
     /* Read token into jwt_t */
@@ -378,97 +405,33 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     const buffer * const kb = p->conf.keyfile;
     int rc = jwt_decode(&jwt,token->ptr,(const unsigned char *)BUF_PTR_LEN(kb));
     if (0 != rc) { /* EINVAL or ENOMEM */
-        mod_authn_jwt_perror(r, rc, "decode jwt", token->ptr);
+        mod_authn_jwt_perror(r->conf.errh, rc, "decode jwt", token->ptr);
         return mod_auth_send_401_unauthorized_bearer(r, require->realm);
     }
 
-    jwt_valid_t *jwt_valid = NULL;
-
-    rc = jwt_valid_new(&jwt_valid, p->conf.alg);
-    if (0 != rc) {
-        mod_authn_jwt_perror(r, rc, "create", "jwt_valid");
-        goto jwt_valid_finish;
-    }
-
-    // TODO These fields should be propagated as error data to the client
-
-    jwt_valid_set_exp_leeway(jwt_valid, p->conf.exp_leeway);
-    jwt_valid_set_nbf_leeway(jwt_valid, p->conf.nbf_leeway);
-
-    if (NULL != p->conf.issuer) {
-        rc = jwt_valid_add_grant(jwt_valid, "iss", p->conf.issuer->ptr);
-        if (0 != rc) {
-            mod_authn_jwt_perror(r, rc, "set issuer to", p->conf.issuer->ptr);
-            goto jwt_valid_finish;
-        }
-    }
-
-    if (NULL != p->conf.subject) {
-        rc = jwt_valid_add_grant(jwt_valid, "iss", p->conf.subject->ptr);
-        if (0 != rc) {
-            mod_authn_jwt_perror(r, rc, "set subject to", p->conf.subject->ptr);
-            goto jwt_valid_finish;
-        }
-    }
-
-    if (NULL != p->conf.audience) {
-        rc = jwt_valid_add_grant(jwt_valid, "iss", p->conf.audience->ptr);
-        if (0 != rc) {
-            mod_authn_jwt_perror(r, rc, "set audience to", p->conf.audience->ptr);
-            goto jwt_valid_finish;
-        }
-    }
-
-    const array *claims = p->conf.claims;
-    for (uint32_t i = 0; NULL != claims && i < claims->used; ++i) {
-        const data_unset * const du = claims->data[i];
-
-        const buffer * const claim = &du->key;
-        const data_type_t type = du->type;
-
-        if (type == TYPE_STRING) {
-            const data_string * const ds = (const data_string *)du;
-            rc = jwt_valid_add_grant(jwt_valid, claim->ptr, ds->value.ptr);
-        } else if (type == TYPE_INTEGER) {
-            const data_integer * const di = (const data_integer *)du;
-            rc = jwt_valid_add_grant_int(jwt_valid, claim->ptr, di->value);
-        }
-
-        if (0 != rc) {
-            mod_authn_jwt_perror(r, rc, "add claim", du->key.ptr);
-            goto jwt_valid_finish;
-        }
-    }
-
-    const array *json_claims = p->conf.json_claims;
-    for (uint32_t i = 0; NULL != json_claims && i < json_claims->used; ++i) {
-        const data_unset * const du = json_claims->data[i];
-        const data_type_t type = du->type;
-
-        if (type == TYPE_STRING) {
-            const data_string * const ds = (const data_string *)du;
-            rc = jwt_valid_add_grants_json(jwt_valid, ds->value.ptr);
-            if (0 != rc) {
-                mod_authn_jwt_perror(r, rc, "add json claim", ds->value.ptr);
-                goto jwt_valid_finish;
-            }
-        }
-    }
-
+    /* (jwt_valid_t *) is reusable but is not thread-safe or reentrant.
+     * If shared between threads, use mutex around (jwt_valid_t *) */
+    /*pthread_mutex_lock(...)*//* or simpler ticket lock or even atomics */
+    jwt_valid_t * const jwt_valid = p->conf.jwt_valid;
     jwt_valid_set_now(jwt_valid, (time_t)log_epoch_secs);
-
     rc = jwt_validate(jwt, jwt_valid);
-    if (0 != rc) {
+    /*pthread_mutex_unlock(...)*/
+
+    if (0 == rc) {
+        // TODO add config option to specify label to retrieve for REMOTE_USER
+        //const char *name = jwt_get_grant(jwt, "?well-known-tag?"); // name? email?
+        //const char *name = jwt_get_header(jwt, "?well-known-tag?"); // name? email?
+        //if (!name)  name = "";
+        //http_auth_setenv(r, name, strlen(name), CONST_STR_LEN("Bearer"));
+    }
+    else {
+        // TODO These fields should be propagated as error data to the client
+        // (??? revisit comment; be careful about info exposed to client)
         char *errstr = jwt_exception_str(rc);
         log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, errstr);
         jwt_free_str(errstr);
-        goto jwt_valid_finish;
     }
 
-jwt_valid_finish:
-    jwt_valid_free(jwt_valid);
-
-jwt_finish:
     jwt_free(jwt);
 
     return (0 == rc) ? HANDLER_GO_ON : HANDLER_ERROR;
