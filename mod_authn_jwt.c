@@ -441,7 +441,9 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     rc = jwt_validate(jwt, jwt_valid);
     if (0 != rc) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, jwt_exception_str(rc));
+        char *errstr = jwt_exception_str(rc);
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, errstr);
+        jwt_free_str(errstr);
         goto jwt_valid_finish;
     }
 
