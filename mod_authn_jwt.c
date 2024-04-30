@@ -1,5 +1,6 @@
 #include "first.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <jwt.h>
@@ -109,6 +110,16 @@ static void mod_authn_jwt_patch_config(request_st * const r, plugin_data * const
         if (config_check_cond(r, (uint32_t)p->cvlist[i].k_id))
             mod_authn_jwt_merge_config(&p->conf, p->cvlist+p->cvlist[i].v.u2[0]);
     }
+}
+
+__attribute_cold__
+__attribute_noinline__
+static int
+mod_authn_jwt_perror(request_st * const r, const int errnum, const char * const label, const char * const value)
+{
+    errno = errnum;
+    log_perror(r->conf.errh, __FILE__, __LINE__, "Failed to %s %s", label, value);
+    return errnum;
 }
 
 static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, server * const srv);
@@ -331,7 +342,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     plugin_data *p = (plugin_data *)p_d;
     mod_authn_jwt_patch_config(r, p);
 
-    handler_t rc = HANDLER_ERROR;
+    int rc;
     unsigned int keylength = 0;
     unsigned char *keyhandle = NULL;
 
@@ -345,8 +356,9 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     /* Read token into jwt_t */
     jwt_t *jwt = NULL;
-    if (0 != jwt_decode(&jwt, token->ptr, keyhandle, keylength) || jwt == NULL) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to decode jwt: %s", token->ptr);
+    rc = jwt_decode(&jwt, token->ptr, keyhandle, keylength);
+    if (0 != rc) { /* EINVAL or ENOMEM */
+        mod_authn_jwt_perror(r, rc, "decode jwt", token->ptr);
         free(keyhandle);
         goto jwt_finish;
     }
@@ -354,37 +366,37 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     jwt_valid_t *jwt_valid = NULL;
 
-    if (0 != jwt_valid_new(&jwt_valid, p->conf.alg) || jwt_valid == NULL) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to create jwt_valid");
+    rc = jwt_valid_new(&jwt_valid, p->conf.alg);
+    if (0 != rc) {
+        mod_authn_jwt_perror(r, rc, "create", "jwt_valid");
         goto jwt_valid_finish;
     }
 
     // TODO These fields should be propagated as error data to the client
-    unsigned int errno;
 
     jwt_valid_set_exp_leeway(jwt_valid, p->conf.exp_leeway);
     jwt_valid_set_nbf_leeway(jwt_valid, p->conf.nbf_leeway);
 
     if (NULL != p->conf.issuer) {
-        errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.issuer->ptr);
-        if (0 != errno) {
-            log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set issuer to %s: %s", p->conf.issuer->ptr, jwt_exception_str(errno));
+        rc = jwt_valid_add_grant(jwt_valid, "iss", p->conf.issuer->ptr);
+        if (0 != rc) {
+            mod_authn_jwt_perror(r, rc, "set issuer to", p->conf.issuer->ptr);
             goto jwt_valid_finish;
         }
     }
 
     if (NULL != p->conf.subject) {
-        errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.subject->ptr);
-        if (0 != errno) {
-            log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set subject to %s: %s", p->conf.subject->ptr, jwt_exception_str(errno));
+        rc = jwt_valid_add_grant(jwt_valid, "iss", p->conf.subject->ptr);
+        if (0 != rc) {
+            mod_authn_jwt_perror(r, rc, "set subject to", p->conf.subject->ptr);
             goto jwt_valid_finish;
         }
     }
 
     if (NULL != p->conf.audience) {
-        errno = jwt_valid_add_grant(jwt_valid, "iss", p->conf.audience->ptr);
-        if (0 != errno) {
-            log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set audience to %s: %s", p->conf.audience->ptr, jwt_exception_str(errno));
+        rc = jwt_valid_add_grant(jwt_valid, "iss", p->conf.audience->ptr);
+        if (0 != rc) {
+            mod_authn_jwt_perror(r, rc, "set audience to", p->conf.audience->ptr);
             goto jwt_valid_finish;
         }
     }
@@ -398,19 +410,15 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
         if (type == TYPE_STRING) {
             const data_string * const ds = (const data_string *)du;
-
-            errno = jwt_valid_add_grant(jwt_valid, claim->ptr, (&ds->value)->ptr);
-            if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %s: %s", claim->ptr, (&ds->value)->ptr, jwt_exception_str(errno));
-                goto jwt_valid_finish;
-            }
+            rc = jwt_valid_add_grant(jwt_valid, claim->ptr, ds->value.ptr);
         } else if (type == TYPE_INTEGER) {
             const data_integer * const di = (const data_integer *)du;
-            errno = jwt_valid_add_grant_int(jwt_valid, claim->ptr, di->value);
-            if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %d: %s", claim->ptr, di->value, jwt_exception_str(errno));
-                goto jwt_valid_finish;
-            }
+            rc = jwt_valid_add_grant_int(jwt_valid, claim->ptr, di->value);
+        }
+
+        if (0 != rc) {
+            mod_authn_jwt_perror(r, rc, "add claim", du->key.ptr);
+            goto jwt_valid_finish;
         }
     }
 
@@ -421,9 +429,9 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
         if (type == TYPE_STRING) {
             const data_string * const ds = (const data_string *)du;
-            errno = jwt_valid_add_grants_json(jwt_valid, (&ds->value)->ptr);
-            if (0 != errno) {
-                log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add json claim %s: %s", (&ds->value)->ptr, jwt_exception_str(errno));
+            rc = jwt_valid_add_grants_json(jwt_valid, ds->value.ptr);
+            if (0 != rc) {
+                mod_authn_jwt_perror(r, rc, "add json claim", ds->value.ptr);
                 goto jwt_valid_finish;
             }
         }
@@ -431,13 +439,11 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     jwt_valid_set_now(jwt_valid, (time_t)log_epoch_secs);
 
-    errno = jwt_validate(jwt, jwt_valid);
-    if (0 != errno) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, jwt_exception_str(errno));
+    rc = jwt_validate(jwt, jwt_valid);
+    if (0 != rc) {
+        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, jwt_exception_str(rc));
         goto jwt_valid_finish;
     }
-
-    rc = HANDLER_GO_ON;
 
 jwt_valid_finish:
     jwt_valid_free(jwt_valid);
@@ -445,7 +451,7 @@ jwt_valid_finish:
 jwt_finish:
     jwt_free(jwt);
 
-    return rc;
+    return (0 == rc) ? HANDLER_GO_ON : HANDLER_ERROR;
 }
 
 __attribute_cold__
