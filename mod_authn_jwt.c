@@ -389,7 +389,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         }
     }
 
-    errno = jwt_valid_set_now(jwt_valid, time(NULL));
+    errno = jwt_valid_set_now(jwt_valid, (time_t)log_epoch_secs);
     if (0 != errno) {
         log_error(r->conf.errh, __FILE__, __LINE__, "Failed to set now: %s", jwt_exception_str(errno));
         goto jwt_valid_finish;
