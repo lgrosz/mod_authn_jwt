@@ -285,20 +285,11 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
     if (!buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
         return mod_auth_send_400_bad_request(r);
 
-    size_t ulen = buffer_clen(vb) - (sizeof("Bearer ")-1);
-    char token[2048];
-
-    if (ulen > 2047) {
-        log_error(r->conf.errh, __FILE__, __LINE__, "Token too large");
-        return mod_auth_send_401_unauthorized_bearer(r, require->realm);
-    }
-
-    strcpy(token, vb->ptr+sizeof("Bearer ")-1);
-
     /* TODO Here is where we can do authentication caching */
 
-    const buffer tokenb = { token, ulen+1, 0 };
-    handler_t rc = backend->basic(r, backend->p_d, require, &tokenb, "");
+    const buffer token = { vb->ptr + sizeof("Bearer ")-1,
+                           buffer_clen(vb) - (sizeof("Bearer ")-1) + 1, 0 };
+    handler_t rc = backend->basic(r, backend->p_d, require, &token, "");
 
     switch (rc) {
         case HANDLER_GO_ON:
