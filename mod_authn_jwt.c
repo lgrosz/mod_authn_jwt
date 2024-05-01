@@ -62,10 +62,30 @@ INIT_FUNC(mod_authn_jwt_init) {
     return p;
 }
 
+FREE_FUNC(mod_authn_jwt_cleanup) {
+    plugin_data * const p = p_d;
+    if (NULL == p->cvlist) return;
+    /* (init i to 0 if global context; to 1 to skip empty global context) */
+    for (int i = !p->cvlist[0].v.u2[1], used = p->nconfig; i < used; ++i) {
+        config_plugin_value_t *cpv = p->cvlist + p->cvlist[i].v.u2[0];
+        for (; -1 != cpv->k_id; ++cpv) {
+            if (cpv->vtype != T_CONFIG_LOCAL || NULL == cpv->v.v) continue;
+            switch (cpv->k_id) {
+              case 0: /* auth.backend.jwt.keyfile */
+                buffer_free(cpv->v.v);
+                break;
+              default:
+                break;
+            }
+        }
+    }
+}
+
 static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const config_plugin_value_t * const cpv) {
     switch (cpv->k_id) { /* index into static config_plugin_keys_t cpk[] */
       case 0: /* auth.backend.jwt.keyfile */
-        pconf->keyfile = cpv->v.b;
+        if (cpv->vtype != T_CONFIG_LOCAL) break;
+        pconf->keyfile = cpv->v.v;
         break;
       case 1: /* auth.backend.jwt.algorithm */
         pconf->alg = cpv->v.u;
@@ -167,7 +187,18 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
             switch (cpv->k_id) {
                 case 0: /* auth.backend.jwt.keyfile */
                     if (buffer_is_blank(cpv->v.b))
-                        cpv->v.b = NULL;
+                        cpv->v.v = buffer_init();
+                    else {
+                        off_t lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
+                        char *data = fdevent_load_file(cpv->v.b->ptr, &lim, srv->errh, malloc, free);
+                        if (NULL == data)
+                            return HANDLER_ERROR;
+                        buffer * const b = buffer_init();
+                        b->ptr = data;
+                        b->used = (uint32_t)lim+1;
+                        cpv->v.v = b;
+                    }
+                    cpv->vtype = T_CONFIG_LOCAL;
                     break;
                 case 1: /* auth.backend.jwt.algorithm */
                     {
@@ -333,28 +364,17 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     plugin_data *p = (plugin_data *)p_d;
     mod_authn_jwt_patch_config(r, p);
-
-    int rc;
-    unsigned int keylength = 0;
-    unsigned char *keyhandle = NULL;
-
-    if (p->conf.keyfile) {
-        off_t lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
-        keyhandle = fdevent_load_file(p->conf.keyfile, &lim, r->conf.errh, malloc, free);
-        if (NULL == keyhandle)
-            return HANDLER_ERROR;
-        keylength = (unsigned int)lim;
-    }
+    if (NULL == p->conf.keyfile)
+        return HANDLER_ERROR; /*(misconfigured)*/
 
     /* Read token into jwt_t */
     jwt_t *jwt = NULL;
-    rc = jwt_decode(&jwt, token->ptr, keyhandle, keylength);
+    const buffer * const kb = p->conf.keyfile;
+    int rc = jwt_decode(&jwt,token->ptr,(const unsigned char *)BUF_PTR_LEN(kb));
     if (0 != rc) { /* EINVAL or ENOMEM */
         mod_authn_jwt_perror(r, rc, "decode jwt", token->ptr);
-        free(keyhandle);
         goto jwt_finish;
     }
-    free(keyhandle);
 
     jwt_valid_t *jwt_valid = NULL;
 
@@ -455,6 +475,7 @@ int mod_authn_jwt_plugin_init(plugin *p) {
 	p->version     = LIGHTTPD_VERSION_ID;
 	p->name        = "authn_jwt";
 	p->init        = mod_authn_jwt_init;
+	p->cleanup     = mod_authn_jwt_cleanup;
 	p->set_defaults= mod_authn_jwt_set_defaults;
 
 	return 0;
