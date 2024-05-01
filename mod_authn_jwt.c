@@ -147,31 +147,6 @@ mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
         else if (0 == strcmp(du->key.ptr, "nbf-leeway")
                  && (rc = config_plugin_value_to_int32(du, -1)) != -1)
             jwt_valid_set_nbf_leeway(jwt_valid, rc);
-        else if (0 == strcmp(du->key.ptr, "issuer") && du->type == TYPE_STRING) {
-            const char *data = ((const data_string *)du)->value.ptr;
-            rc = jwt_valid_add_grant(jwt_valid, "iss", data);
-            if (0 != rc) {
-                mod_authn_jwt_perror(errh, rc, "set issuer to", data);
-                break;
-            }
-        }
-        else if (0 == strcmp(du->key.ptr, "subject") && du->type == TYPE_STRING) {
-            const char *data = ((const data_string *)du)->value.ptr;
-            rc = jwt_valid_add_grant(jwt_valid, "sub", data);
-            if (0 != rc) {
-                mod_authn_jwt_perror(errh, rc, "set subject to", data);
-                break;
-            }
-        }
-        else if (0 == strcmp(du->key.ptr, "audience") && du->type == TYPE_STRING) {
-            /* future: might support array value in addition to string value */
-            const char *data = ((const data_string *)du)->value.ptr;
-            rc = jwt_valid_add_grant(jwt_valid, "aud", data);
-            if (0 != rc) {
-                mod_authn_jwt_perror(errh, rc, "set audience to", data);
-                break;
-            }
-        }
         else if (0 == strcmp(du->key.ptr, "claims") && du->type == TYPE_ARRAY
                  && array_is_kvany(&((const data_array *)du)->value)) {
             const array * const claims = &((const data_array *)du)->value;
