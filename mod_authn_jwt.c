@@ -142,11 +142,17 @@ mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
         if (0 == strcmp(du->key.ptr, "algorithm"))
             continue; /*(already handled above)*/
         else if (0 == strcmp(du->key.ptr, "exp-leeway")
-                 && (rc = config_plugin_value_to_int32(du, -1)) != -1)
+                 && (rc = config_plugin_value_to_int32(du, -1)) != -1) {
+          #ifdef HAVE_JWT_VALID_SET_EXP_LEEWAY
             jwt_valid_set_exp_leeway(jwt_valid, rc);
+          #endif
+        }
         else if (0 == strcmp(du->key.ptr, "nbf-leeway")
-                 && (rc = config_plugin_value_to_int32(du, -1)) != -1)
+                 && (rc = config_plugin_value_to_int32(du, -1)) != -1) {
+          #ifdef HAVE_JWT_VALID_SET_NBF_LEEWAY
             jwt_valid_set_nbf_leeway(jwt_valid, rc);
+          #endif
+        }
         else if (0 == strcmp(du->key.ptr, "claims") && du->type == TYPE_ARRAY
                  && array_is_kvany(&((const data_array *)du)->value)) {
             const array * const claims = &((const data_array *)du)->value;
