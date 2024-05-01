@@ -68,7 +68,6 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
         pconf->keyfile = cpv->v.b;
         break;
       case 1: /* auth.backend.jwt.algorithm */
-        if (cpv->vtype != T_CONFIG_LOCAL) break;
         pconf->alg = cpv->v.u;
         break;
       case 2: /* auth.backend.jwt.exp-leeway */
@@ -122,8 +121,6 @@ mod_authn_jwt_perror(request_st * const r, const int errnum, const char * const 
     return errnum;
 }
 
-static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, server * const srv);
-
 SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
       { CONST_STR_LEN("auth.backend.jwt.keyfile"),
@@ -173,8 +170,14 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                         cpv->v.b = NULL;
                     break;
                 case 1: /* auth.backend.jwt.algorithm */
-                    cpv->v.u = mod_authn_jwt_process_algorithm(cpv->v.b->ptr, srv);
-                    cpv->vtype = T_CONFIG_LOCAL;
+                    {
+                        jwt_alg_t alg = jwt_str_alg(cpv->v.b->ptr);
+                        if (JWT_ALG_INVAL == alg) {
+                            log_error(srv->errh, __FILE__, __LINE__, "Could not process algorithm: %s", cpv->v.b->ptr);
+                            return HANDLER_ERROR;
+                        }
+                        cpv->v.u = (unsigned int)alg;
+                    }
                     break;
                 case 2: /* auth.backend.jwt.exp-leeway */
                 case 3: /* auth.backend.jwt.nbf-leeway */
@@ -218,17 +221,6 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     }
 
     return HANDLER_GO_ON;
-}
-
-static jwt_alg_t mod_authn_jwt_process_algorithm(const char * const algstr, server * const srv)
-{
-    jwt_alg_t alg = jwt_str_alg(algstr);
-
-    if (JWT_ALG_INVAL == alg) {
-        log_notice(srv->errh, __FILE__, __LINE__, "Could not process algorithm :%s", algstr);
-    }
-
-    return alg;
 }
 
 /*
