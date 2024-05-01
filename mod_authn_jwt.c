@@ -181,7 +181,14 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                         cpv->v.b = NULL;
                     break;
                 case 7: /* auth.backend.jwt.claims */
-                       break;
+                    for (uint32_t j = 0; j < cpv->v.a->used; ++j) {
+                        const data_unset * const du = cpv->v.a->data[j];
+                        if (du->type != TYPE_STRING && du->type != TYPE_INTEGER)
+                            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim %s", du->key.ptr);
+                    }
+                    if (0 == cpv->v.a->used)
+                        cpv->v.a = NULL;
+                    break;
                 case 8: /* auth.backend.jwt.json_claims */
                     if (0 == cpv->v.a->used)
                         cpv->v.a = NULL;
@@ -419,8 +426,6 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
                 log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add claim %s => %d: %s", claim->ptr, di->value, jwt_exception_str(errno));
                 goto jwt_valid_finish;
             }
-        } else {
-            log_notice(r->conf.errh, __FILE__, __LINE__, "Unsupported type, ignoring claim %s", claim->ptr);
         }
     }
 
