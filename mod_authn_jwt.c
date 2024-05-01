@@ -28,13 +28,12 @@ typedef struct {
 } plugin_data;
 
 
-static handler_t mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
-
+static handler_t mod_authn_jwt_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
 static handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd);
 
 INIT_FUNC(mod_authn_jwt_init) {
     static http_auth_scheme_t http_auth_scheme_bearer =
-        { "bearer", mod_auth_check_bearer, NULL };
+        { "bearer", mod_authn_jwt_check_bearer, NULL };
 
     /* NOTE Since http_auth_backend_t is limited to basic and digest handlers,
      * the bearer handler will just be assigned as the "basic" handler. It's
@@ -288,7 +287,7 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
 __attribute_cold__
 __attribute_noinline__
 static handler_t
-mod_auth_send_400_bad_request (request_st * const r)
+mod_authn_jwt_send_400_bad_request (request_st * const r)
 {
     /* a field was missing or invalid */
     r->http_status = 400; /* Bad Request */
@@ -307,7 +306,7 @@ mod_authn_jwt_send_500_server_error (request_st * const r)
 
 __attribute_noinline__
 static handler_t
-mod_auth_send_401_unauthorized_bearer(request_st * const r, const buffer * const realm)
+mod_authn_jwt_send_401_unauthorized_bearer(request_st * const r, const buffer * const realm)
 {
     log_notice(r->conf.errh, __FILE__, __LINE__, "Unauthorized bearer");
 
@@ -330,7 +329,7 @@ mod_auth_send_401_unauthorized_bearer(request_st * const r, const buffer * const
 
 __attribute_cold__
 static handler_t
-mod_auth_bearer_misconfigured (request_st * const r, const struct http_auth_backend_t * const backend)
+mod_authn_jwt_bearer_misconfigured (request_st * const r, const struct http_auth_backend_t * const backend)
 {
     if (NULL == backend)
         log_error(r->conf.errh, __FILE__, __LINE__,
@@ -344,12 +343,12 @@ mod_auth_bearer_misconfigured (request_st * const r, const struct http_auth_back
 }
 
 static handler_t
-mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend)
+mod_authn_jwt_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend)
 {
     UNUSED(p_d);
 
     if (backend == NULL || backend->basic == NULL)
-        return mod_auth_bearer_misconfigured(r, backend);
+        return mod_authn_jwt_bearer_misconfigured(r, backend);
 
     /* Parse token from authorization header */
     const buffer * const vb =
@@ -357,10 +356,10 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
                 CONST_STR_LEN("Authorization"));
 
     if (NULL == vb)
-        return mod_auth_send_401_unauthorized_bearer(r, require->realm);
+        return mod_authn_jwt_send_401_unauthorized_bearer(r, require->realm);
 
     if (!buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
-        return mod_auth_send_400_bad_request(r);
+        return mod_authn_jwt_send_400_bad_request(r);
 
     /* TODO Here is where we can do authentication caching */
 
@@ -384,7 +383,7 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
              *
              * We probably need to check plugin data or similar for this operation
              */
-            rc = mod_auth_send_401_unauthorized_bearer(r, require->realm);
+            rc = mod_authn_jwt_send_401_unauthorized_bearer(r, require->realm);
             break;
     }
 
@@ -406,7 +405,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     int rc = jwt_decode(&jwt,token->ptr,(const unsigned char *)BUF_PTR_LEN(kb));
     if (0 != rc) { /* EINVAL or ENOMEM */
         mod_authn_jwt_perror(r->conf.errh, rc, "decode jwt", token->ptr);
-        return mod_auth_send_401_unauthorized_bearer(r, require->realm);
+        return mod_authn_jwt_send_401_unauthorized_bearer(r, require->realm);
     }
 
     /* (jwt_valid_t *) is reusable but is not thread-safe or reentrant.
