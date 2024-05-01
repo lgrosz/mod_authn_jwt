@@ -359,7 +359,6 @@ mod_auth_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t
 
 handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd)
 {
-    UNUSED(require);
     UNUSED(pswd);
 
     plugin_data *p = (plugin_data *)p_d;
@@ -373,7 +372,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     int rc = jwt_decode(&jwt,token->ptr,(const unsigned char *)BUF_PTR_LEN(kb));
     if (0 != rc) { /* EINVAL or ENOMEM */
         mod_authn_jwt_perror(r, rc, "decode jwt", token->ptr);
-        goto jwt_finish;
+        return mod_auth_send_401_unauthorized_bearer(r, require->realm);
     }
 
     jwt_valid_t *jwt_valid = NULL;
