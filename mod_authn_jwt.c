@@ -29,17 +29,13 @@ typedef struct {
 
 
 static handler_t mod_authn_jwt_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend);
-static handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd);
 
 INIT_FUNC(mod_authn_jwt_init) {
     static http_auth_scheme_t http_auth_scheme_bearer =
         { "bearer", mod_authn_jwt_check_bearer, NULL };
 
-    /* NOTE Since http_auth_backend_t is limited to basic and digest handlers,
-     * the bearer handler will just be assigned as the "basic" handler. It's
-     * implementation will assume that the "user" parameter will be a token */
     static http_auth_backend_t http_auth_backend_jwt =
-        { "jwt", mod_authn_jwt_bearer, NULL, NULL };
+        { "jwt", NULL, NULL, NULL };
 
     plugin_data *p = ck_calloc(1, sizeof(plugin_data));
 
@@ -316,87 +312,22 @@ mod_authn_jwt_send_500_server_error (request_st * const r)
     return HANDLER_FINISHED;
 }
 
-mod_authn_jwt_bearer_misconfigured (request_st * const r, const struct http_auth_backend_t * const backend)
-{
-    if (NULL == backend)
-        log_error(r->conf.errh, __FILE__, __LINE__,
-          "auth.backend not configured for %s", r->uri.path.ptr);
-    else
-        log_error(r->conf.errh, __FILE__, __LINE__,
-          "auth.require \"method\" => \"...\" is invalid "
-          "(try \"bearer\"?) for %s", r->uri.path.ptr);
-
-    return mod_authn_jwt_send_500_server_error(r);
-}
-
 static handler_t
-mod_authn_jwt_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend)
+mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t * const require, const char * const token)
 {
-    UNUSED(p_d);
-
-    if (backend == NULL || backend->basic == NULL)
-        return mod_authn_jwt_bearer_misconfigured(r, backend);
-
-    /* Parse token from authorization header */
-    const buffer * const vb =
-        http_header_request_get(r, HTTP_HEADER_AUTHORIZATION,
-                CONST_STR_LEN("Authorization"));
-
-    if (NULL == vb)
-        return mod_authn_jwt_send_401_unauthorized(r, require, NULL);
-
-    if (!buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
-        return mod_authn_jwt_send_400_bad_request(r, require, "invalid_request");
-
-    /* TODO Here is where we can do authentication caching */
-
-    const buffer token = { vb->ptr + sizeof("Bearer ")-1,
-                           buffer_clen(vb) - (sizeof("Bearer ")-1) + 1, 0 };
-    handler_t rc = backend->basic(r, backend->p_d, require, &token, "");
-
-    switch (rc) {
-        case HANDLER_GO_ON:
-        case HANDLER_WAIT_FOR_EVENT:
-        case HANDLER_FINISHED:
-            break;
-        default:
-            /* TODO
-             * - include "error" attribute and give correct codes
-             *   - invalid_request
-             *   - invalid_token
-             *   - insufficient_scope
-             * - include "error_description" attribute (developer-readable)
-             * - include "error_uri" attribute (human-readable)
-             *
-             * We probably need to check plugin data or similar for this operation
-             */
-            rc = mod_authn_jwt_send_401_unauthorized_bearer(r, require->realm);
-            break;
-    }
-
-    return rc;
-}
-
-handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require_t *require, const buffer *token, const char *pswd)
-{
-    UNUSED(pswd);
-
     plugin_data *p = (plugin_data *)p_d;
     mod_authn_jwt_patch_config(r, p);
     if (NULL == p->conf.keyfile || NULL == p->conf.jwt_valid)
         return mod_authn_jwt_send_500_server_error(r); /*(misconfigured)*/
 
-    /* Read token into jwt_t */
     jwt_t *jwt = NULL;
     const buffer * const kb = p->conf.keyfile;
-    int rc = jwt_decode(&jwt,token->ptr,(const unsigned char *)BUF_PTR_LEN(kb));
-    if (0 != rc) { /* EINVAL or ENOMEM */
-        mod_authn_jwt_perror(r->conf.errh, rc, "decode jwt", token->ptr);
+    int rc = jwt_decode(&jwt, token, (const unsigned char *)BUF_PTR_LEN(kb));
+    if (0 != rc)
         return mod_authn_jwt_send_401_unauthorized(r, require,
           r->conf.log_response_header /*(debugging)*/
             ? "invalid_token\", error_description=\"malformed"
             : "invalid_token");
-    }
 
     /* (jwt_valid_t *) is reusable but is not thread-safe or reentrant.
      * If shared between threads, use mutex around (jwt_valid_t *) */
@@ -455,6 +386,24 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
 
     return (0 == rc) ? HANDLER_GO_ON : HANDLER_FINISHED;
 }
+
+static handler_t
+mod_authn_jwt_check_bearer(request_st *r, void *p_d, const struct http_auth_require_t *require, const struct http_auth_backend_t *backend)
+{
+    UNUSED(backend);
+    const buffer * const vb =
+      http_header_request_get(r, HTTP_HEADER_AUTHORIZATION,
+                              CONST_STR_LEN("Authorization"));
+    if (NULL == vb)
+        return mod_authn_jwt_send_401_unauthorized(r, require, NULL);
+    if (!buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
+        return mod_authn_jwt_send_400_bad_request(r, require, "invalid_request");
+
+    /* TODO Here is where we can do authentication caching */
+
+    return mod_authn_jwt_bearer(r, p_d, require, vb->ptr+sizeof("Bearer ")-1);
+}
+
 
 __attribute_cold__
 __declspec_dllexport__
