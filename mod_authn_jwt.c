@@ -140,7 +140,7 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
         T_CONFIG_ARRAY_KVANY,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ CONST_STR_LEN("auth.backend.jwt.json-claims"),
-        T_CONFIG_ARRAY,
+        T_CONFIG_ARRAY_VLIST,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
@@ -183,7 +183,9 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                 case 7: /* auth.backend.jwt.claims */
                        break;
                 case 8: /* auth.backend.jwt.json_claims */
-                       break;
+                    if (0 == cpv->v.a->used)
+                        cpv->v.a = NULL;
+                    break;
                 default:/* should not happen */
                     break;
             }
@@ -434,8 +436,6 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
                 log_error(r->conf.errh, __FILE__, __LINE__, "Failed to add json claim %s: %s", (&ds->value)->ptr, jwt_exception_str(errno));
                 goto jwt_valid_finish;
             }
-        } else {
-            log_notice(r->conf.errh, __FILE__, __LINE__, "JSON claims must be string, value ignored...");
         }
     }
 
