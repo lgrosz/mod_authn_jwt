@@ -472,11 +472,11 @@ __attribute_cold__
 __declspec_dllexport__
 int mod_authn_jwt_plugin_init(plugin *p);
 int mod_authn_jwt_plugin_init(plugin *p) {
-	p->version     = LIGHTTPD_VERSION_ID;
-	p->name        = "authn_jwt";
-	p->init        = mod_authn_jwt_init;
-	p->cleanup     = mod_authn_jwt_cleanup;
-	p->set_defaults= mod_authn_jwt_set_defaults;
+    p->version     = LIGHTTPD_VERSION_ID;
+    p->name        = "authn_jwt";
+    p->init        = mod_authn_jwt_init;
+    p->cleanup     = mod_authn_jwt_cleanup;
+    p->set_defaults= mod_authn_jwt_set_defaults;
 
-	return 0;
+    return 0;
 }
