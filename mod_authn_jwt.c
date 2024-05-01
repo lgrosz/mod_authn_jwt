@@ -265,14 +265,45 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
  * auth schemes
  */
 
+__attribute_noinline__
+static void
+mod_authn_jwt_www_authenticate(request_st * const r, const struct http_auth_require_t * const require, const char * const error)
+{
+    /* [RFC-6750 3.1](https://datatracker.ietf.org/doc/html/rfc6750#section-3.1) */
+
+    buffer * const b =
+      http_header_response_set_ptr(r, HTTP_HEADER_WWW_AUTHENTICATE,
+                                   CONST_STR_LEN("WWW-Authenticate"));
+    buffer_append_str3(b,
+      CONST_STR_LEN("Bearer realm=\""),
+      BUF_PTR_LEN(require->realm),
+      CONST_STR_LEN("\", charset=\"UTF-8\""));
+
+    if (error)
+        buffer_append_str3(b,
+          CONST_STR_LEN(", error=\""),
+          error, strlen(error),
+          CONST_STR_LEN("\""));
+}
+
 __attribute_cold__
 __attribute_noinline__
 static handler_t
-mod_authn_jwt_send_400_bad_request (request_st * const r)
+mod_authn_jwt_send_400_bad_request (request_st * const r, const struct http_auth_require_t * const require, const char * const error)
 {
     /* a field was missing or invalid */
     r->http_status = 400; /* Bad Request */
     r->handler_module = NULL;
+    mod_authn_jwt_www_authenticate(r, require, error);
+    return HANDLER_FINISHED;
+}
+
+static handler_t
+mod_authn_jwt_send_401_unauthorized(request_st * const r, const struct http_auth_require_t * const require, const char * const error)
+{
+    r->http_status = 401; /* Unauthorized */
+    r->handler_module = NULL;
+    mod_authn_jwt_www_authenticate(r, require, error);
     return HANDLER_FINISHED;
 }
 
@@ -285,31 +316,6 @@ mod_authn_jwt_send_500_server_error (request_st * const r)
     return HANDLER_FINISHED;
 }
 
-__attribute_noinline__
-static handler_t
-mod_authn_jwt_send_401_unauthorized_bearer(request_st * const r, const buffer * const realm)
-{
-    log_notice(r->conf.errh, __FILE__, __LINE__, "Unauthorized bearer");
-
-    r->http_status = 401;
-    r->handler_module = NULL;
-
-    /* TODO See [RFC-6750 3.1](https://datatracker.ietf.org/doc/html/rfc6750#section-3.1) */
-
-    /* TODO *MAY* include a realm */
-    /* TODO *SHOULD* include error, description, and uri */
-
-    buffer_append_str3(
-            http_header_response_set_ptr(r, HTTP_HEADER_WWW_AUTHENTICATE,
-            CONST_STR_LEN("WWW-Authenticate")),
-            CONST_STR_LEN("Bearer realm=\""),
-            BUF_PTR_LEN(realm),
-            CONST_STR_LEN("\", charset=\"UTF-8\""));
-    return HANDLER_FINISHED;
-}
-
-__attribute_cold__
-static handler_t
 mod_authn_jwt_bearer_misconfigured (request_st * const r, const struct http_auth_backend_t * const backend)
 {
     if (NULL == backend)
@@ -337,10 +343,10 @@ mod_authn_jwt_check_bearer(request_st *r, void *p_d, const struct http_auth_requ
                 CONST_STR_LEN("Authorization"));
 
     if (NULL == vb)
-        return mod_authn_jwt_send_401_unauthorized_bearer(r, require->realm);
+        return mod_authn_jwt_send_401_unauthorized(r, require, NULL);
 
     if (!buffer_eq_icase_ssn(vb->ptr, CONST_STR_LEN("Bearer ")))
-        return mod_authn_jwt_send_400_bad_request(r);
+        return mod_authn_jwt_send_400_bad_request(r, require, "invalid_request");
 
     /* TODO Here is where we can do authentication caching */
 
@@ -386,7 +392,10 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     int rc = jwt_decode(&jwt,token->ptr,(const unsigned char *)BUF_PTR_LEN(kb));
     if (0 != rc) { /* EINVAL or ENOMEM */
         mod_authn_jwt_perror(r->conf.errh, rc, "decode jwt", token->ptr);
-        return mod_authn_jwt_send_401_unauthorized_bearer(r, require->realm);
+        return mod_authn_jwt_send_401_unauthorized(r, require,
+          r->conf.log_response_header /*(debugging)*/
+            ? "invalid_token\", error_description=\"malformed"
+            : "invalid_token");
     }
 
     /* (jwt_valid_t *) is reusable but is not thread-safe or reentrant.
@@ -405,16 +414,46 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         //http_auth_setenv(r, name, strlen(name), CONST_STR_LEN("Bearer"));
     }
     else {
-        // TODO These fields should be propagated as error data to the client
-        // (??? revisit comment; be careful about info exposed to client)
-        char *errstr = jwt_exception_str(rc);
-        log_error(r->conf.errh, __FILE__, __LINE__, "Failed to validate jwt %s: %s", token->ptr, errstr);
-        jwt_free_str(errstr);
+        buffer * const tb = r->tmp_buf;
+        buffer_copy_string_len(tb, CONST_STR_LEN("invalid_token"));
+
+        if (r->conf.log_response_header) { /*(debugging)*/
+            buffer_append_string_len(tb,
+              CONST_STR_LEN("\", error_description=\""));
+          #ifdef HAVE_JWT_EXCEPTION_STR /* user must define for compilation */
+            /* jwt_exception_str() added in jwt v1.17.0; not in older vers */
+            char *errstr = jwt_exception_str(rc);
+            buffer_append_string(tb, errstr);
+            jwt_free_str(errstr);
+          #else
+            if (rc & JWT_VALIDATION_ERROR)
+                buffer_append_str2(tb, CONST_STR_LEN("general failures"),
+                                       CONST_STR_LEN("; "));
+            if (rc & JWT_VALIDATION_ALG_MISMATCH)
+                buffer_append_str2(tb, CONST_STR_LEN("algorithm mismatch"),
+                                       CONST_STR_LEN("; "));
+            if (rc & (JWT_VALIDATION_EXPIRED|JWT_VALIDATION_TOO_NEW))
+                buffer_append_str2(tb, CONST_STR_LEN("expired or too new"),
+                                       CONST_STR_LEN("; "));
+            if (rc & JWT_VALIDATION_GRANT_MISSING)
+                buffer_append_str2(tb, CONST_STR_LEN("grant missing"),
+                                       CONST_STR_LEN("; "));
+            if (rc & (JWT_VALIDATION_GRANT_MISMATCH
+                     |JWT_VALIDATION_ISS_MISMATCH
+                     |JWT_VALIDATION_SUB_MISMATCH
+                     |JWT_VALIDATION_AUD_MISMATCH))
+                buffer_append_str2(tb, CONST_STR_LEN("grant mismatch"),
+                                       CONST_STR_LEN("; "));
+            buffer_truncate(tb, buffer_clen(tb)-2); /*(remove final "; ")*/
+          #endif
+        }
+
+        mod_authn_jwt_send_401_unauthorized(r, require, tb->ptr);
     }
 
     jwt_free(jwt);
 
-    return (0 == rc) ? HANDLER_GO_ON : HANDLER_ERROR;
+    return (0 == rc) ? HANDLER_GO_ON : HANDLER_FINISHED;
 }
 
 __attribute_cold__
