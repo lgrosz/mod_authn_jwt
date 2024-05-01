@@ -88,7 +88,7 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
       case 7: /* auth.backend.jwt.claims */
         pconf->claims = cpv->v.a;
         break;
-      case 8: /* auth.backend.jwt.json_claims */
+      case 8: /* auth.backend.jwt.json-claims */
         pconf->json_claims = cpv->v.a;
         break;
       default:/* should not happen */
@@ -189,7 +189,7 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
                     if (0 == cpv->v.a->used)
                         cpv->v.a = NULL;
                     break;
-                case 8: /* auth.backend.jwt.json_claims */
+                case 8: /* auth.backend.jwt.json-claims */
                     if (0 == cpv->v.a->used)
                         cpv->v.a = NULL;
                     break;
@@ -359,7 +359,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
         goto jwt_valid_finish;
     }
 
-    // TODO These fields should be propogated as error data to the client
+    // TODO These fields should be propagated as error data to the client
     unsigned int errno;
 
     jwt_valid_set_exp_leeway(jwt_valid, p->conf.exp_leeway);
