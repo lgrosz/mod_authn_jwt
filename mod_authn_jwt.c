@@ -269,6 +269,15 @@ mod_auth_send_400_bad_request (request_st * const r)
     return HANDLER_FINISHED;
 }
 
+__attribute_cold__
+static handler_t
+mod_authn_jwt_send_500_server_error (request_st * const r)
+{
+    r->http_status = 500; /* Internal Server Error */
+    r->handler_module = NULL;
+    return HANDLER_FINISHED;
+}
+
 __attribute_noinline__
 static handler_t
 mod_auth_send_401_unauthorized_bearer(request_st * const r, const buffer * const realm)
@@ -304,9 +313,7 @@ mod_auth_bearer_misconfigured (request_st * const r, const struct http_auth_back
           "auth.require \"method\" => \"...\" is invalid "
           "(try \"bearer\"?) for %s", r->uri.path.ptr);
 
-    r->http_status = 500;
-    r->handler_module = NULL;
-    return HANDLER_FINISHED;
+    return mod_authn_jwt_send_500_server_error(r);
 }
 
 static handler_t
@@ -364,7 +371,7 @@ handler_t mod_authn_jwt_bearer(request_st *r, void *p_d, const http_auth_require
     plugin_data *p = (plugin_data *)p_d;
     mod_authn_jwt_patch_config(r, p);
     if (NULL == p->conf.keyfile)
-        return HANDLER_ERROR; /*(misconfigured)*/
+        return mod_authn_jwt_send_500_server_error(r); /*(misconfigured)*/
 
     /* Read token into jwt_t */
     jwt_t *jwt = NULL;
