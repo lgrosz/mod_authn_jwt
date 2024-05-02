@@ -312,6 +312,39 @@ mod_authn_jwt_send_500_server_error (request_st * const r)
     return HANDLER_FINISHED;
 }
 
+__attribute_cold__
+__attribute_noinline__
+static void
+mod_authn_jwt_append_error_description (buffer * const b, const int rc)
+{
+  #ifdef HAVE_JWT_EXCEPTION_STR /* user must define for compilation */
+    /* jwt_exception_str() added in jwt v1.17.0; not in older vers */
+    char *errstr = jwt_exception_str(rc);
+    buffer_append_string(b, errstr);
+    jwt_free_str(errstr);
+  #else
+    if (rc & JWT_VALIDATION_ERROR)
+        buffer_append_str2(b, CONST_STR_LEN("general failures"),
+                              CONST_STR_LEN("; "));
+    if (rc & JWT_VALIDATION_ALG_MISMATCH)
+        buffer_append_str2(b, CONST_STR_LEN("algorithm mismatch"),
+                              CONST_STR_LEN("; "));
+    if (rc & (JWT_VALIDATION_EXPIRED|JWT_VALIDATION_TOO_NEW))
+        buffer_append_str2(b, CONST_STR_LEN("expired or too new"),
+                              CONST_STR_LEN("; "));
+    if (rc & JWT_VALIDATION_GRANT_MISSING)
+        buffer_append_str2(b, CONST_STR_LEN("grant missing"),
+                              CONST_STR_LEN("; "));
+    if (rc & (JWT_VALIDATION_GRANT_MISMATCH
+             |JWT_VALIDATION_ISS_MISMATCH
+             |JWT_VALIDATION_SUB_MISMATCH
+             |JWT_VALIDATION_AUD_MISMATCH))
+        buffer_append_str2(b, CONST_STR_LEN("grant mismatch"),
+                              CONST_STR_LEN("; "));
+    buffer_truncate(b, buffer_clen(b)-2); /*(remove final "; ")*/
+  #endif
+}
+
 static void
 mod_authn_jwt_set_remote_user (request_st * const r, jwt_t * const jwt)
 {
@@ -363,38 +396,11 @@ mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t 
     else {
         buffer * const tb = r->tmp_buf;
         buffer_copy_string_len(tb, CONST_STR_LEN("invalid_token"));
-
         if (r->conf.log_response_header) { /*(debugging)*/
             buffer_append_string_len(tb,
               CONST_STR_LEN("\", error_description=\""));
-          #ifdef HAVE_JWT_EXCEPTION_STR /* user must define for compilation */
-            /* jwt_exception_str() added in jwt v1.17.0; not in older vers */
-            char *errstr = jwt_exception_str(rc);
-            buffer_append_string(tb, errstr);
-            jwt_free_str(errstr);
-          #else
-            if (rc & JWT_VALIDATION_ERROR)
-                buffer_append_str2(tb, CONST_STR_LEN("general failures"),
-                                       CONST_STR_LEN("; "));
-            if (rc & JWT_VALIDATION_ALG_MISMATCH)
-                buffer_append_str2(tb, CONST_STR_LEN("algorithm mismatch"),
-                                       CONST_STR_LEN("; "));
-            if (rc & (JWT_VALIDATION_EXPIRED|JWT_VALIDATION_TOO_NEW))
-                buffer_append_str2(tb, CONST_STR_LEN("expired or too new"),
-                                       CONST_STR_LEN("; "));
-            if (rc & JWT_VALIDATION_GRANT_MISSING)
-                buffer_append_str2(tb, CONST_STR_LEN("grant missing"),
-                                       CONST_STR_LEN("; "));
-            if (rc & (JWT_VALIDATION_GRANT_MISMATCH
-                     |JWT_VALIDATION_ISS_MISMATCH
-                     |JWT_VALIDATION_SUB_MISMATCH
-                     |JWT_VALIDATION_AUD_MISMATCH))
-                buffer_append_str2(tb, CONST_STR_LEN("grant mismatch"),
-                                       CONST_STR_LEN("; "));
-            buffer_truncate(tb, buffer_clen(tb)-2); /*(remove final "; ")*/
-          #endif
+            mod_authn_jwt_append_error_description(tb, rc);
         }
-
         mod_authn_jwt_send_401_unauthorized(r, require, tb->ptr);
     }
 
