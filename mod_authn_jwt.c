@@ -18,7 +18,12 @@
 
 typedef struct {
     jwt_valid_t *jwt_valid;
-    const buffer *keyfile;
+    unsigned char *key;
+    uint32_t klen;
+} mod_authn_jwt_opts;
+
+typedef struct {
+    mod_authn_jwt_opts *opts;
 } plugin_config;
 
 typedef struct {
@@ -60,10 +65,14 @@ FREE_FUNC(mod_authn_jwt_cleanup) {
             if (cpv->vtype != T_CONFIG_LOCAL || NULL == cpv->v.v) continue;
             switch (cpv->k_id) {
               case 0: /* auth.backend.jwt.opts */
-                jwt_valid_free(cpv->v.v);
-                break;
-              case 1: /* auth.backend.jwt.keyfile */
-                buffer_free(cpv->v.v);
+                {
+                    const mod_authn_jwt_opts * const opts = cpv->v.v;
+                    jwt_valid_free(opts->jwt_valid);
+                    if (opts->key) {
+                        ck_memzero(opts->key, opts->klen);
+                        free(opts->key);
+                    }
+                }
                 break;
               default:
                 break;
@@ -76,11 +85,7 @@ static void mod_authn_jwt_merge_config_cpv(plugin_config * const pconf, const co
     switch (cpv->k_id) { /* index into static config_plugin_keys_t cpk[] */
       case 0: /* auth.backend.jwt.opts */
         if (cpv->vtype != T_CONFIG_LOCAL) break;
-        pconf->jwt_valid = cpv->v.v;
-        break;
-      case 1: /* auth.backend.jwt.keyfile */
-        if (cpv->vtype != T_CONFIG_LOCAL) break;
-        pconf->keyfile = cpv->v.v;
+        pconf->opts = cpv->v.v;
         break;
       default:/* should not happen */
         return;
@@ -112,15 +117,16 @@ mod_authn_jwt_perror(log_error_st * const errh, const int errnum, const char * c
     return errnum;
 }
 
-static jwt_valid_t *
-mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
+static mod_authn_jwt_opts *
+mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
 {
     jwt_valid_t *jwt_valid = NULL;
     const data_unset *du;
     int rc;
     jwt_alg_t alg;
+    const char *keyfile = NULL;
 
-    du = array_get_element_klen(opts, CONST_STR_LEN("algorithm"));
+    du = array_get_element_klen(list, CONST_STR_LEN("algorithm"));
     if (!du || du->type != TYPE_STRING
         || (alg = jwt_str_alg(((const data_string *)du)->value.ptr)) == JWT_ALG_INVAL) {
         log_error(errh, __FILE__, __LINE__, "Invalid or missing auth.backend.jwt.opts \"algorithm\"");
@@ -133,8 +139,8 @@ mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
         return NULL;
     }
 
-    for (uint32_t i = 0; i < opts->used; ++i) {
-        du = opts->data[i];
+    for (uint32_t i = 0; i < list->used; ++i) {
+        du = list->data[i];
         if (0 == strcmp(du->key.ptr, "algorithm"))
             continue; /*(already handled above)*/
         else if (0 == strcmp(du->key.ptr, "exp-leeway")
@@ -183,10 +189,23 @@ mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
             if (0 != rc)
                 break;
         }
+        else if (0 == strcmp(du->key.ptr, "keyfile") && du->type == TYPE_STRING)
+            keyfile = ((const data_string *)du)->value.ptr;
         else {
             log_error(errh, __FILE__, __LINE__, "Invalid syntax for auth.backend.jwt.opts \"%s\"", du->key.ptr);
             rc = -1;
             break;
+        }
+    }
+
+    off_t lim = 0;
+    char *data = NULL;
+    if (0 == rc) {
+        if (keyfile) {
+            lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
+            data = fdevent_load_file(keyfile, &lim, errh, malloc, free);
+            if (NULL == data)
+                rc = -1;
         }
     }
 
@@ -195,16 +214,17 @@ mod_authn_jwt_parse_opts(const array * const opts, log_error_st * const errh)
         return NULL;
     }
 
-    return jwt_valid;
+    mod_authn_jwt_opts * const opts = ck_calloc(1, sizeof(*opts));
+    opts->jwt_valid = jwt_valid;
+    opts->key = (unsigned char *)data;
+    opts->klen = (uint32_t)lim;
+    return opts;
 }
 
 SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
     static const config_plugin_keys_t cpk[] = {
       { CONST_STR_LEN("auth.backend.jwt.opts"),
         T_CONFIG_ARRAY_KVANY,
-        T_CONFIG_SCOPE_CONNECTION }
-     ,{ CONST_STR_LEN("auth.backend.jwt.keyfile"),
-        T_CONFIG_STRING,
         T_CONFIG_SCOPE_CONNECTION }
      ,{ NULL, 0,
         T_CONFIG_UNSET,
@@ -224,21 +244,6 @@ SETDEFAULTS_FUNC(mod_authn_jwt_set_defaults) {
               case 0: /* auth.backend.jwt.opts */
                 cpv->v.v = mod_authn_jwt_parse_opts(cpv->v.a, srv->errh);
                 if (NULL == cpv->v.v) return HANDLER_ERROR;
-                cpv->vtype = T_CONFIG_LOCAL;
-                break;
-              case 1: /* auth.backend.jwt.keyfile */
-                if (buffer_is_blank(cpv->v.b))
-                    cpv->v.v = buffer_init();
-                else {
-                    off_t lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
-                    char *data = fdevent_load_file(cpv->v.b->ptr, &lim, srv->errh, malloc, free);
-                    if (NULL == data)
-                        return HANDLER_ERROR;
-                    buffer * const b = buffer_init();
-                    b->ptr = data;
-                    b->used = (uint32_t)lim+1;
-                    cpv->v.v = b;
-                }
                 cpv->vtype = T_CONFIG_LOCAL;
                 break;
               default:/* should not happen */
@@ -370,12 +375,12 @@ mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t 
 {
     plugin_data *p = (plugin_data *)p_d;
     mod_authn_jwt_patch_config(r, p);
-    if (NULL == p->conf.keyfile || NULL == p->conf.jwt_valid)
+    const mod_authn_jwt_opts * const opts = p->conf.opts;
+    if (NULL == opts)
         return mod_authn_jwt_send_500_server_error(r); /*(misconfigured)*/
 
     jwt_t *jwt = NULL;
-    const buffer * const kb = p->conf.keyfile;
-    int rc = jwt_decode(&jwt, token, (const unsigned char *)BUF_PTR_LEN(kb));
+    int rc = jwt_decode(&jwt, token, opts->key, opts->klen);
     if (0 != rc)
         return mod_authn_jwt_send_401_unauthorized(r, require,
           r->conf.log_response_header /*(debugging)*/
@@ -385,9 +390,8 @@ mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t 
     /* (jwt_valid_t *) is reusable but is not thread-safe or reentrant.
      * If shared between threads, use mutex around (jwt_valid_t *) */
     /*pthread_mutex_lock(...)*//* or simpler ticket lock or even atomics */
-    jwt_valid_t * const jwt_valid = p->conf.jwt_valid;
-    jwt_valid_set_now(jwt_valid, (time_t)log_epoch_secs);
-    rc = jwt_validate(jwt, jwt_valid);
+    jwt_valid_set_now(opts->jwt_valid, (time_t)log_epoch_secs);
+    rc = jwt_validate(jwt, opts->jwt_valid);
     /*pthread_mutex_unlock(...)*/
 
     if (0 == rc) {
