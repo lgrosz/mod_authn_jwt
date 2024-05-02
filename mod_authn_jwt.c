@@ -312,6 +312,26 @@ mod_authn_jwt_send_500_server_error (request_st * const r)
     return HANDLER_FINISHED;
 }
 
+static void
+mod_authn_jwt_set_remote_user (request_st * const r, jwt_t * const jwt)
+{
+    // TODO add config option to specify label to retrieve for REMOTE_USER
+    /* Apache mod_auth_openidc doc defaults REMOTE_USER to "[sub]@[iss]" */
+    const char *sub = jwt_get_grant(jwt, "sub");
+    if (NULL == sub) return;
+    const char *iss = jwt_get_grant(jwt, "iss");
+    if (!iss)
+        http_auth_setenv(r, sub, strlen(sub), CONST_STR_LEN("Bearer"));
+    else {
+        if (0 == strncmp(iss, "https://", sizeof("https://")-1))
+            iss += sizeof("https://")-1;
+        buffer * const tb = r->tmp_buf;
+        buffer_clear(tb);
+        buffer_append_str3(tb,sub,strlen(sub),"@",1,iss,strlen(iss));
+        http_auth_setenv(r, BUF_PTR_LEN(tb), CONST_STR_LEN("Bearer"));
+    }
+}
+
 static handler_t
 mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t * const require, const char * const token)
 {
@@ -338,11 +358,7 @@ mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t 
     /*pthread_mutex_unlock(...)*/
 
     if (0 == rc) {
-        // TODO add config option to specify label to retrieve for REMOTE_USER
-        //const char *name = jwt_get_grant(jwt, "?well-known-tag?"); // name? email?
-        //const char *name = jwt_get_header(jwt, "?well-known-tag?"); // name? email?
-        //if (!name)  name = "";
-        //http_auth_setenv(r, name, strlen(name), CONST_STR_LEN("Bearer"));
+        mod_authn_jwt_set_remote_user(r, jwt);
     }
     else {
         buffer * const tb = r->tmp_buf;
