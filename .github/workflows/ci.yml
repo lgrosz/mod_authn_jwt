@@ -13,6 +13,7 @@ jobs:
         build_system:
           - cmake
           - meson
+          - autoconf
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -52,6 +53,7 @@ jobs:
           cd lighttpd
           patch -p1 <CMakeLists.txt.patch
           patch -p1 <meson.patch
+          patch -p1 <autoconf.patch
       - if: matrix.build_system == 'cmake'
         name: Configure with CMake
         run: |
@@ -79,3 +81,19 @@ jobs:
         run: |
           cd build
           meson test
+      - if: matrix.build_system == 'autoconf'
+        name: Configure
+        run: |
+          cd lighttpd
+          ./autogen.sh
+          ./configure --with-jwt
+      - if: matrix.build_system == 'autoconf'
+        name: Build
+        run: |
+          cd lighttpd
+          make
+      - if: matrix.build_system == 'autoconf'
+        name: Test
+        run: |
+          cd lighttpd
+          make check
