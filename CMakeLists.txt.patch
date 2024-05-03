@@ -1,6 +1,8 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 04df8f78..369e25fa 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -45,6 +45,7 @@
+@@ -45,6 +45,7 @@ option(WITH_LIBEV "libev support for fdevent handlers [default: off]")
  option(WITH_LIBUNWIND "with libunwind to print backtraces in asserts [default: off]")
  option(WITH_MAXMINDDB "with MaxMind GeoIP2-support mod_maxminddb [default: off]")
  option(WITH_SASL "with SASL-support for mod_authn_sasl [default: off]")
@@ -8,7 +10,7 @@
  option(WITH_XXHASH "with system-provided xxhash [default: off]")
  
  if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-@@ -637,6 +638,16 @@
+@@ -637,6 +638,16 @@ else()
  	unset(HAVE_SASL)
  endif()
  
@@ -25,16 +27,33 @@
  
  if(WITH_XML)
  	xconfig(xml2-config XML2_LDFLAGS XML2_CFLAGS)
-@@ -1103,6 +1114,12 @@
- 	add_and_install_library(mod_authn_sasl "mod_authn_sasl.c")
- 	set(L_MOD_AUTHN_SASL ${L_MOD_AUTHN_SASL} sasl2)
+@@ -1105,6 +1116,29 @@ if(WITH_SASL)
  	target_link_libraries(mod_authn_sasl ${L_MOD_AUTHN_SASL})
-+endif()
-+
+ endif()
+ 
 +if(WITH_JWT)
 +	add_and_install_library(mod_authn_jwt "mod_authn_jwt.c")
 +	set(L_MOD_AUTHN_JWT ${L_MOD_AUTHN_JWT} jwt)
 +	target_link_libraries(mod_authn_jwt ${L_MOD_AUTHN_JWT})
- endif()
- 
++
++	include(CheckSymbolExists)
++
++	check_symbol_exists(jwt_valid_set_exp_leeway "jwt.h" HAVE_JWT_VALID_SET_EXP_LEEWAY)
++	if(HAVE_JWT_VALID_SET_EXP_LEEWAY)
++		target_compile_definitions(mod_authn_jwt PRIVATE -DHAVE_JWT_VALID_SET_EXP_LEEWAY)
++	endif()
++
++	check_symbol_exists(jwt_valid_set_nbf_leeway "jwt.h" HAVE_JWT_VALID_SET_NBF_LEEWAY)
++	if(HAVE_JWT_VALID_SET_NBF_LEEWAY)
++		target_compile_definitions(mod_authn_jwt PRIVATE -DHAVE_JWT_VALID_SET_NBF_LEEWAY)
++	endif()
++
++	check_symbol_exists(jwt_exception_str "jwt.h" HAVE_JWT_EXCEPTION_STR)
++	if(HAVE_JWT_EXCEPTION_STR)
++		target_compile_definitions(mod_authn_jwt PRIVATE -DHAVE_JWT_EXCEPTION_STR)
++	endif()
++endif()
++
  if(HAVE_ZLIB_H OR HAVE_ZSTD_H OR HAVE_BZLIB_H OR HAVE_BROTLI OR HAVE_LIBDEFLATE)
+ 	if(HAVE_ZLIB_H)
+ 		set(L_MOD_DEFLATE ${L_MOD_DEFLATE} ${ZLIB_LIBRARY})
