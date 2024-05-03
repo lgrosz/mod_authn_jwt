@@ -31,24 +31,25 @@ Load into lighttpd with the a code snippet like
 
 ```lighttpd-conf
 server.modules += ( "mod_auth", "mod_authn_file", "mod_authn_jwt" )
+
 auth.backend = "jwt"
-auth.backend.jwt.keyfile = "/etc/ssl/public.pem" # The public key of the issuer
-auth.backend.algorithm = "RS256" # Algorithm which the token is signed
-auth.backend.exp-leeway = 300 # leeway in seconds for exp claim evaluation
-auth.backend.nbf-leeway = 300 # leeway in seconds for nbf claim evaluation
-auth.backend.issuer = "https://my-issuer.com" # iss claim is checked against this
-auth.backend.subject = "user123" # sub claim is checked against this
-auth.backend.aud = "https://my-client.com" # aud claim is checked against this
+auth.backend.jwt.opts = (
+    "algorithm" => "RS256", # Algorithm which the token is signed
+    "keyfile" => "/etc/ssl/public.pem", # The public key of the issuer
+    "exp-leeway" => "300", # leeway in seconds for exp claim evaluation
+    "nbf-leeway" => "300", # leeway in seconds for nbf claim evaluation
+    "issuer" => "https://my-issuer.com", # iss claim is checked against this
+    "subject" => "user123", # sub claim is checked against this
+    "aud" => "https://my-client.com", # aud claim is checked against this
 
-# General claims can be achieved like so
-auth.backend.jwt.claims = (
-  "int-claim" => 10,
-  "str-claim" => "val"
-)
+    # General claims can be achieved like so
+    "claims" => (
+      "int-claim" => 10,
+      "str-claim" => "val"
+    ),
 
-# Complex claims can be achieved like so
-auth.backend.jwt.json-claims = (
-  "{\"nested\":{\"inner\": true}}"
+    # Complex claims can be achieved like so
+    "json-claims" => ("{\"nested\":{\"inner\": true}}")
 )
 
 auth.require = (
