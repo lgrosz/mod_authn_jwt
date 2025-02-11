@@ -79,13 +79,11 @@ jobs:
       - if: matrix.build_system == 'meson'
         name: Build with Ninja
         run: |
-          cd build
-          ninja
+          ninja -C build
       - if: matrix.build_system == 'meson'
         name: Test with Meson
         run: |
-          cd build
-          meson test
+          meson test -C build
       - if: matrix.build_system == 'autoconf'
         name: Configure
         run: |
