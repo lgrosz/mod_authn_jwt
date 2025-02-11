@@ -100,3 +100,10 @@ jobs:
         run: |
           cd lighttpd
           make check
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mod_authn_jwt
+        uses: actions/checkout@v4
+      - run: ./test.sh
+        working-directory: integration-test
