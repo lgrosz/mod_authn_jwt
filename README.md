@@ -60,10 +60,11 @@ $ meson test -C build
 
 ### Docker
 
-A builder is provided by the `builder` target in the root directory `Dockerfile`. A quick-build can be done like so
+A `builder` and `tester` target in the root directory `Dockerfile` for quick-enough iteration without needing to setup a whole development environment.
 
 ```sh
 $ docker build path/to/repo --target=builder
+$ docker build path/to/repo --target=tester
 ```
 
 ## Usage
