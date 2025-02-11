@@ -12,12 +12,53 @@ This module provides a scheme handler in accordance with [RFC 6750](https://data
 
 ## Build
 
+The build is performed by patching the source into and building lighttpd. All build systems supported by lighttpd are supported by this module.
+
+Begin by patching the source
+
 ```sh
-$ cmake -S path/to/source -B path/to/build -DLIGHTTPD_SOURCE_DIR=path/to/lighttpd-source -DLIGHTTPD_BUILD_DIR=path/to/lighttpd-build
-$ cmake --build path/to/build
+$ cp mod_authn_jwt/mod_authn_file.c lighttpd/src
+$ cp mod_authn_jwt/*.patch lighttpd
+$ cd lighttpd
+$ patch -p1 <CMakeLists.txt.patch
+$ patch -p1 <meson.patch
+$ patch -p1 <autoconf.patch
 ```
 
-It is expected this project is built with the same artifacts (like config.h) as the lighttpd instance it'll be loaded into.
+Then configure and build with your preferred build system
+
+### Autoconf
+
+```sh
+$ cd lighttpd
+$ ./autogen.sh
+$ ./configure --with-jwt
+$ make
+$ make check
+```
+
+### CMake
+
+```sh
+$ cmake -B build -S lighttpd -DWITH_JWT=ON
+$ ctest --test-dir build
+```
+
+### Meson
+
+```sh
+$ meson setup -Dwith_jwt=enabled build lighttpd
+$ meson test -C build
+```
+
+### Ninja
+
+```sh
+$ ninja -C build setup -Dwith_jwt=enabled build lighttpd
+$ meson test -C build
+```
+
+### Docker
 
 A builder is provided by the `builder` target in the root directory `Dockerfile`. A quick-build can be done like so
 
