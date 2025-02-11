@@ -14,6 +14,11 @@ jobs:
           - cmake
           - meson
           - autoconf
+        lighttpd_ref:
+          - lighttpd-1.4.75
+          - lighttpd-1.4.76
+          - lighttpd-1.4.77
+          - master
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -44,7 +49,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: "lighttpd/lighttpd1.4"
-          ref: "lighttpd-1.4.75"
+          ref: ${{ matrix.lighttpd_ref }}
           path: "lighttpd"
       - name: Patch lighttpd
         run: |
