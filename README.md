@@ -48,13 +48,7 @@ $ ctest --test-dir build
 
 ```sh
 $ meson setup -Dwith_jwt=enabled build lighttpd
-$ meson test -C build
-```
-
-### Ninja
-
-```sh
-$ ninja -C build setup -Dwith_jwt=enabled build lighttpd
+$ ninja -C build
 $ meson test -C build
 ```
 
