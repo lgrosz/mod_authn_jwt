@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -38,11 +38,11 @@ RUN \
 RUN cmake -S lighttpd-1.4.75 -B lighttpd-build -DWITH_JWT=ON
 RUN cmake --build lighttpd-build
 
-FROM builder as tester
+FROM builder AS tester
 
 RUN ctest --build lighttpd-build
 
-FROM ubuntu:22.04 as runner
+FROM ubuntu:22.04 AS runner
 
 RUN apt-get update && apt-get install -y \
     curl \
