@@ -116,8 +116,8 @@ Individual tests can be ran and inspected like...
 
 ```sh
 path/to/repo/integration-test$ docker compose create --build
-path/to/repo/integration-test$ docker start client
-path/to/repo/integration-test$ docker exec client pytest test_jwt.py:test_invalidjwt
-path/to/repo/integration-test$ docker logs server
+path/to/repo/integration-test$ docker compose start client
+path/to/repo/integration-test$ docker compose exec client pytest test_jwt.py::test_invalidjwt
+path/to/repo/integration-test$ docker compose logs server
 path/to/repo/integration-test$ docker compose down --volumes
 ```
