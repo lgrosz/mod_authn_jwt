@@ -155,6 +155,174 @@ def test_nbfgood():
 
     assert response.status_code == 200
 
+def test_aud():
+    """
+    Tests aud claim success
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "aud": "the-audience"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/audience",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+
+def test_badaud():
+    """
+    Tests aud claim mismatch
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "aud": "the-wrong-audience"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/audience",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+
+def test_missingaud():
+    """
+    Tests aud claim mismatch
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/audience",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({ }, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+
+def test_iss():
+    """
+    Tests iss claim success
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "iss": "the-issuer"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/issuer",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+
+def test_badiss():
+    """
+    Tests iss claim mismatch
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "iss": "the-wrong-issuer"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/issuer",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+
+def test_missingiss():
+    """
+    Tests iss claim mismatch
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/issuer",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({ }, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+
+def test_sub():
+    """
+    Tests sub claim success
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "sub": "the-subject"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/subject",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+
+def test_badsub():
+    """
+    Tests sub claim mismatch
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "sub": "the-wrong-subject"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/subject",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+
+def test_missingsub():
+    """
+    Tests sub claim mismatch
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/subject",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({ }, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 401
+
 def test_missingstringclaim():
     """
     Tests missing string claim

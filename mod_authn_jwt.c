@@ -155,6 +155,15 @@ mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
             jwt_valid_set_nbf_leeway(jwt_valid, rc);
           #endif
         }
+        else if (0 == strcmp(du->key.ptr, "audience") && du->type == TYPE_STRING) {
+            rc = jwt_valid_add_grant(jwt_valid, "aud", ((const data_string *)du)->value.ptr);
+        }
+        else if (0 == strcmp(du->key.ptr, "issuer") && du->type == TYPE_STRING) {
+            rc = jwt_valid_add_grant(jwt_valid, "iss", ((const data_string *)du)->value.ptr);
+        }
+        else if (0 == strcmp(du->key.ptr, "subject") && du->type == TYPE_STRING) {
+            rc = jwt_valid_add_grant(jwt_valid, "sub", ((const data_string *)du)->value.ptr);
+        }
         else if (0 == strcmp(du->key.ptr, "claims") && du->type == TYPE_ARRAY
                  && array_is_kvany(&((const data_array *)du)->value)) {
             const array * const claims = &((const data_array *)du)->value;

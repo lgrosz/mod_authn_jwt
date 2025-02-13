@@ -74,9 +74,9 @@ auth.backend.jwt.opts = (
     "keyfile" => "/etc/ssl/public.pem", # The public key of the issuer
     "exp-leeway" => "300", # leeway in seconds for exp claim evaluation
     "nbf-leeway" => "300", # leeway in seconds for nbf claim evaluation
+    "audience" => "https://my-client.com", # aud claim is checked against this
     "issuer" => "https://my-issuer.com", # iss claim is checked against this
     "subject" => "user123", # sub claim is checked against this
-    "aud" => "https://my-client.com", # aud claim is checked against this
 
     # General claims can be achieved like so
     "claims" => (
