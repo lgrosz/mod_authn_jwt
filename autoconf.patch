@@ -25,7 +25,7 @@
 +    JWT_LIBS="-L$WITH_JWT/lib -ljwt"
 +  else
 +    AC_CHECK_HEADERS([jwt.h],
-+      [AC_CHECK_LIB([jwt], [jwt_valid_new],
++      [AC_CHECK_LIB([jwt], [jwt_checker_new],
 +        [
 +          JWT_CFLAGS=
 +          JWT_LIBS="-ljwt"

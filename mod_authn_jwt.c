@@ -17,9 +17,8 @@
 #include "mod_auth_api.h"
 
 typedef struct {
-    jwt_valid_t *jwt_valid;
-    unsigned char *key;
-    uint32_t klen;
+    jwt_checker_t *jwt_checker;
+    jwk_set_t *jwk_set;
 } mod_authn_jwt_opts;
 
 typedef struct {
@@ -67,11 +66,9 @@ FREE_FUNC(mod_authn_jwt_cleanup) {
               case 0: /* auth.backend.jwt.opts */
                 {
                     const mod_authn_jwt_opts * const opts = cpv->v.v;
-                    jwt_valid_free(opts->jwt_valid);
-                    if (opts->key) {
-                        ck_memzero(opts->key, opts->klen);
-                        free(opts->key);
-                    }
+                    jwt_checker_free(opts->jwt_checker);
+                    if (opts->jwk_set)
+                        jwks_free(opts->jwk_set);
                 }
                 break;
               default:
@@ -120,10 +117,12 @@ mod_authn_jwt_perror(log_error_st * const errh, const int errnum, const char * c
 static mod_authn_jwt_opts *
 mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
 {
-    jwt_valid_t *jwt_valid = NULL;
+    jwt_checker_t *jwt_checker = NULL;
     const data_unset *du;
     int rc;
     jwt_alg_t alg;
+    jwk_set_t *jwk_set = NULL;
+    const jwk_item_t *jwk_item;
     const char *keyfile = NULL;
 
     du = array_get_element_klen(list, CONST_STR_LEN("algorithm"));
@@ -133,11 +132,14 @@ mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
         return NULL;
     }
 
-    rc = jwt_valid_new(&jwt_valid, alg);
-    if (0 != rc) {
-        mod_authn_jwt_perror(errh, rc, "create", "jwt_valid");
+    jwt_checker = jwt_checker_new();
+    if (NULL == jwt_checker) {
+        mod_authn_jwt_perror(errh, 0, "create", "jwt_checker");
         return NULL;
     }
+
+    // No config is good config, I suppose
+    rc = 0;
 
     for (uint32_t i = 0; i < list->used; ++i) {
         du = list->data[i];
@@ -145,27 +147,50 @@ mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
             continue; /*(already handled above)*/
         else if (0 == strcmp(du->key.ptr, "exp-leeway")
                  && (rc = config_plugin_value_to_int32(du, -1)) != -1) {
-          #ifdef HAVE_JWT_VALID_SET_EXP_LEEWAY
-            jwt_valid_set_exp_leeway(jwt_valid, rc);
-          #endif
+            rc = jwt_checker_time_leeway(jwt_checker, JWT_CLAIM_EXP, rc);
         }
         else if (0 == strcmp(du->key.ptr, "nbf-leeway")
                  && (rc = config_plugin_value_to_int32(du, -1)) != -1) {
-          #ifdef HAVE_JWT_VALID_SET_NBF_LEEWAY
-            jwt_valid_set_nbf_leeway(jwt_valid, rc);
-          #endif
+            rc = jwt_checker_time_leeway(jwt_checker, JWT_CLAIM_NBF, rc);
         }
         else if (0 == strcmp(du->key.ptr, "audience") && du->type == TYPE_STRING) {
-            rc = jwt_valid_add_grant(jwt_valid, "aud", ((const data_string *)du)->value.ptr);
+            rc = jwt_checker_claim_set(jwt_checker, JWT_CLAIM_AUD, ((const data_string *)du)->value.ptr);
         }
         else if (0 == strcmp(du->key.ptr, "issuer") && du->type == TYPE_STRING) {
-            rc = jwt_valid_add_grant(jwt_valid, "iss", ((const data_string *)du)->value.ptr);
+            rc = jwt_checker_claim_set(jwt_checker, JWT_CLAIM_ISS, ((const data_string *)du)->value.ptr);
         }
         else if (0 == strcmp(du->key.ptr, "subject") && du->type == TYPE_STRING) {
-            rc = jwt_valid_add_grant(jwt_valid, "sub", ((const data_string *)du)->value.ptr);
+            rc = jwt_checker_claim_set(jwt_checker, JWT_CLAIM_SUB, ((const data_string *)du)->value.ptr);
         }
-        else if (0 == strcmp(du->key.ptr, "keyfile") && du->type == TYPE_STRING)
+        else if (0 == strcmp(du->key.ptr, "keyfile") && du->type == TYPE_STRING) {
             keyfile = ((const data_string *)du)->value.ptr;
+            jwk_set = jwks_create_fromfile(keyfile);
+            if (NULL == jwk_set) {
+                if (jwks_error(jwk_set)) {
+                    // This is really bad, just get out
+                    log_error(errh, __FILE__, __LINE__, "Failed to load jwks \"%s\"", jwks_error_msg(jwk_set));
+                    rc = -1;
+                    break;
+                }
+
+                // TODO check for, notify of, and discard erroneous keys
+            }
+
+            // Use last key in the key set.. mostly because I have no idea how
+            // LibJWT wants me to choose this considering there is no way to
+            // query the set size...
+            // Iterate through the array until you hit a NULL item
+            jwk_item = NULL;
+            for (struct { size_t i; jwk_item_t *item; } d = { 0, jwks_item_get(jwk_set, 0) }; d.item != NULL; d.item = jwks_item_get(jwk_set, ++d.i)) {
+                jwk_item = d.item;
+            }
+
+            rc = jwt_checker_setkey(jwt_checker, alg, jwk_item);
+            if (0 != rc) {
+                mod_authn_jwt_perror(errh, rc, "set key", jwt_checker_error_msg(jwt_checker));
+                break;
+            }
+        }
         else {
             log_error(errh, __FILE__, __LINE__, "Invalid syntax for auth.backend.jwt.opts \"%s\"", du->key.ptr);
             rc = -1;
@@ -173,26 +198,14 @@ mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
         }
     }
 
-    off_t lim = 0;
-    char *data = NULL;
-    if (0 == rc) {
-        if (keyfile) {
-            lim = 1*1024*1024; /*(arbitrary limit: 1 MB file; expect < 10 KB)*/
-            data = fdevent_load_file(keyfile, &lim, errh, malloc, free);
-            if (NULL == data)
-                rc = -1;
-        }
-    }
-
     if (0 != rc) {
-        jwt_valid_free(jwt_valid);
+        jwt_checker_free(jwt_checker);
         return NULL;
     }
 
     mod_authn_jwt_opts * const opts = ck_calloc(1, sizeof(*opts));
-    opts->jwt_valid = jwt_valid;
-    opts->key = (unsigned char *)data;
-    opts->klen = (uint32_t)lim;
+    opts->jwt_checker = jwt_checker;
+    opts->jwk_set = jwk_set;
     return opts;
 }
 
@@ -292,39 +305,6 @@ mod_authn_jwt_send_500_server_error (request_st * const r)
     return HANDLER_FINISHED;
 }
 
-__attribute_cold__
-__attribute_noinline__
-static void
-mod_authn_jwt_append_error_description (buffer * const b, const int rc)
-{
-  #ifdef HAVE_JWT_EXCEPTION_STR /* user must define for compilation */
-    /* jwt_exception_str() added in jwt v1.17.0; not in older vers */
-    char *errstr = jwt_exception_str(rc);
-    buffer_append_string(b, errstr);
-    jwt_free_str(errstr);
-  #else
-    if (rc & JWT_VALIDATION_ERROR)
-        buffer_append_str2(b, CONST_STR_LEN("general failures"),
-                              CONST_STR_LEN("; "));
-    if (rc & JWT_VALIDATION_ALG_MISMATCH)
-        buffer_append_str2(b, CONST_STR_LEN("algorithm mismatch"),
-                              CONST_STR_LEN("; "));
-    if (rc & (JWT_VALIDATION_EXPIRED|JWT_VALIDATION_TOO_NEW))
-        buffer_append_str2(b, CONST_STR_LEN("expired or too new"),
-                              CONST_STR_LEN("; "));
-    if (rc & JWT_VALIDATION_GRANT_MISSING)
-        buffer_append_str2(b, CONST_STR_LEN("grant missing"),
-                              CONST_STR_LEN("; "));
-    if (rc & (JWT_VALIDATION_GRANT_MISMATCH
-             |JWT_VALIDATION_ISS_MISMATCH
-             |JWT_VALIDATION_SUB_MISMATCH
-             |JWT_VALIDATION_AUD_MISMATCH))
-        buffer_append_str2(b, CONST_STR_LEN("grant mismatch"),
-                              CONST_STR_LEN("; "));
-    buffer_truncate(b, buffer_clen(b)-2); /*(remove final "; ")*/
-  #endif
-}
-
 static const char *
 remove_url_scheme(const char *url)
 {
@@ -342,14 +322,39 @@ remove_url_scheme(const char *url)
     return url;
 }
 
-static void
-mod_authn_jwt_set_remote_user (request_st * const r, jwt_t * const jwt)
+static int
+mod_authn_jwt_set_remote_user (jwt_t *jwt, jwt_config_t * jwt_config)
 {
+    jwt_value_t sub_val;
+    jwt_value_t iss_val;
+    jwt_value_error_t err;
+    request_st * r;
+
+    if (NULL == jwt_config) {
+        return 1;
+    }
+
+    r = jwt_config->ctx;
+
+    jwt_set_GET_STR(&sub_val, "sub");
+    err = jwt_claim_get(jwt, &sub_val);
+    if (err == JWT_VALUE_ERR_NOEXIST)
+        return 0;
+    else if (err != JWT_VALUE_ERR_NONE) {
+        return 1;
+    }
+
+    jwt_set_GET_STR(&iss_val, "iss");
+    err = jwt_claim_get(jwt, &iss_val);
+    if (err != JWT_VALUE_ERR_NOEXIST && err != JWT_VALUE_ERR_NONE) {
+        return 1;
+    }
+
     // TODO add config option to specify label to retrieve for REMOTE_USER
     /* Apache mod_auth_openidc doc defaults REMOTE_USER to "[sub]@[iss]" */
-    const char *sub = remove_url_scheme(jwt_get_grant(jwt, "sub"));
-    if (NULL == sub) return;
-    const char *iss = remove_url_scheme(jwt_get_grant(jwt, "iss"));
+    const char *sub = remove_url_scheme(sub_val.str_val);
+    if (NULL == sub) return 0;
+    const char *iss = remove_url_scheme(iss_val.str_val);
     if (!iss)
         http_auth_setenv(r, sub, strlen(sub), CONST_STR_LEN("Bearer"));
     else {
@@ -358,6 +363,8 @@ mod_authn_jwt_set_remote_user (request_st * const r, jwt_t * const jwt)
         buffer_append_str3(tb,sub,strlen(sub),"@",1,iss,strlen(iss));
         http_auth_setenv(r, BUF_PTR_LEN(tb), CONST_STR_LEN("Bearer"));
     }
+
+    return 0;
 }
 
 static handler_t
@@ -369,36 +376,25 @@ mod_authn_jwt_bearer(request_st * const r, void *p_d, const http_auth_require_t 
     if (NULL == opts)
         return mod_authn_jwt_send_500_server_error(r); /*(misconfigured)*/
 
-    jwt_t *jwt = NULL;
-    int rc = jwt_decode(&jwt, token, opts->key, opts->klen);
-    if (0 != rc)
-        return mod_authn_jwt_send_401_unauthorized(r, require,
-          r->conf.log_response_header /*(debugging)*/
-            ? "invalid_token\", error_description=\"malformed"
-            : "invalid_token");
+    if (jwt_checker_setcb(opts->jwt_checker, mod_authn_jwt_set_remote_user, r))
+        return mod_authn_jwt_send_500_server_error(r);
 
-    /* (jwt_valid_t *) is reusable but is not thread-safe or reentrant.
-     * If shared between threads, use mutex around (jwt_valid_t *) */
+    /* (jwt_checker_t *) is reusable but is not thread-safe or reentrant.
+     * If shared between threads, use mutex around (jwt_checker_t *) */
     /*pthread_mutex_lock(...)*//* or simpler ticket lock or even atomics */
-    jwt_valid_set_now(opts->jwt_valid, (time_t)log_epoch_secs);
-    rc = jwt_validate(jwt, opts->jwt_valid);
+    int rc = jwt_checker_verify(opts->jwt_checker, token);
     /*pthread_mutex_unlock(...)*/
 
-    if (0 == rc) {
-        mod_authn_jwt_set_remote_user(r, jwt);
-    }
-    else {
+    if (0 != rc) {
         buffer * const tb = r->tmp_buf;
         buffer_copy_string_len(tb, CONST_STR_LEN("invalid_token"));
         if (r->conf.log_response_header) { /*(debugging)*/
             buffer_append_string_len(tb,
               CONST_STR_LEN("\", error_description=\""));
-            mod_authn_jwt_append_error_description(tb, rc);
+            buffer_append_string(tb, jwt_checker_error_msg(opts->jwt_checker));
         }
         mod_authn_jwt_send_401_unauthorized(r, require, tb->ptr);
     }
-
-    jwt_free(jwt);
 
     return (0 == rc) ? HANDLER_GO_ON : HANDLER_FINISHED;
 }

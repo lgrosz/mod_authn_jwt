@@ -7,7 +7,7 @@ This module provides a scheme handler in accordance with [RFC 6750](https://data
 ## Requirements
 
 - [lighttpd >= 1.4.75](https://redmine.lighttpd.net/)
-- [libjwt >= 1.17.0](https://github.com/benmcollins/libjwt)
+- [libjwt >= 3.1.0](https://github.com/benmcollins/libjwt)
 
 
 ## Build
@@ -71,7 +71,7 @@ server.modules += ( "mod_auth", "mod_authn_file", "mod_authn_jwt" )
 auth.backend = "jwt"
 auth.backend.jwt.opts = (
     "algorithm" => "RS256", # Algorithm which the token is signed
-    "keyfile" => "/etc/ssl/public.pem", # The public key of the issuer
+    "keyfile" => "/etc/ssl/jwk.json", # The public key of the issuer
     "exp-leeway" => "300", # leeway in seconds for exp claim evaluation
     "nbf-leeway" => "300", # leeway in seconds for nbf claim evaluation
     "audience" => "https://my-client.com", # aud claim is checked against this

@@ -12,15 +12,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and build libjwt
-ADD https://github.com/benmcollins/libjwt/releases/download/v1.17.0/libjwt-1.17.0.tar.bz2 libjwt-1.17.0.tar.bz2
-RUN tar -xjf libjwt-1.17.0.tar.bz2
-RUN \
-    cd libjwt-1.17.0 && \
-    mkdir out && \
-    cd out && \
-    cmake -GNinja -DBUILD_SHARED_LIBS=ON .. && \
-    ninja && \
-    ninja install
+ADD https://github.com/benmcollins/libjwt/releases/download/v3.1.0/libjwt-3.1.0.tar.xz libjwt-3.1.0.tar.xz
+RUN tar -xJf libjwt-3.1.0.tar.xz
+RUN cmake -S libjwt-3.1.0 -B libjwt-build
+RUN cmake --build libjwt-build --target install
 
 # Download lighttpd
 ADD https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-1.4.75.tar.gz lighttpd-1.4.75.tar.gz
