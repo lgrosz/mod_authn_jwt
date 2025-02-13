@@ -15,7 +15,7 @@
 +if (WITH_JWT)
 +	check_include_files(jwt.h HAVE_JWT_H)
 +	if(HAVE_JWT_H)
-+		check_library_exists(jwt jwt_valid_new "" HAVE_JWT)
++		check_library_exists(jwt jwt_checker_new "" HAVE_JWT)
 +	endif()
 +else()
 +	unset(HAVE_JWT_H)
