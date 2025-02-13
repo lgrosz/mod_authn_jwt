@@ -77,15 +77,6 @@ auth.backend.jwt.opts = (
     "audience" => "https://my-client.com", # aud claim is checked against this
     "issuer" => "https://my-issuer.com", # iss claim is checked against this
     "subject" => "user123", # sub claim is checked against this
-
-    # General claims can be achieved like so
-    "claims" => (
-      "int-claim" => 10,
-      "str-claim" => "val"
-    ),
-
-    # Complex claims can be achieved like so
-    "json-claims" => ("{\"nested\":{\"inner\": true}}")
 )
 
 auth.require = (

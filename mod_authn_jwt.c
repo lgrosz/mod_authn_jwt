@@ -164,40 +164,6 @@ mod_authn_jwt_parse_opts(const array * const list, log_error_st * const errh)
         else if (0 == strcmp(du->key.ptr, "subject") && du->type == TYPE_STRING) {
             rc = jwt_valid_add_grant(jwt_valid, "sub", ((const data_string *)du)->value.ptr);
         }
-        else if (0 == strcmp(du->key.ptr, "claims") && du->type == TYPE_ARRAY
-                 && array_is_kvany(&((const data_array *)du)->value)) {
-            const array * const claims = &((const data_array *)du)->value;
-            for (uint32_t j = 0; j < claims->used; ++j) {
-                du = claims->data[j];
-                rc = 0;
-                if (du->type == TYPE_STRING)
-                    rc = jwt_valid_add_grant(jwt_valid, du->key.ptr, ((const data_string *)du)->value.ptr);
-                else if (du->type == TYPE_INTEGER)
-                    rc = jwt_valid_add_grant_int(jwt_valid, du->key.ptr, ((const data_integer *)du)->value);
-                else
-                    log_notice(errh, __FILE__, __LINE__, "Unsupported type, ignoring claim %s", du->key.ptr);
-                if (0 != rc) {
-                    mod_authn_jwt_perror(errh, rc, "add claim", du->key.ptr);
-                    break;
-                }
-            }
-            if (0 != rc)
-                break;
-        }
-        else if (0 == strcmp(du->key.ptr, "json-claims") && du->type == TYPE_ARRAY
-                 && array_is_vlist(&((const data_array *)du)->value)) {
-            const array * const json_claims = &((const data_array *)du)->value;
-            for (uint32_t j = 0; j < json_claims->used; ++j) {
-                const data_string * const ds = (const data_string *)json_claims->data[j];
-                rc = jwt_valid_add_grants_json(jwt_valid, ds->value.ptr);
-                if (0 != rc) {
-                    mod_authn_jwt_perror(errh, rc, "add json claim", ds->value.ptr);
-                    break;
-                }
-            }
-            if (0 != rc)
-                break;
-        }
         else if (0 == strcmp(du->key.ptr, "keyfile") && du->type == TYPE_STRING)
             keyfile = ((const data_string *)du)->value.ptr;
         else {
