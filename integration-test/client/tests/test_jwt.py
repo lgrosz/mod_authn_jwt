@@ -322,3 +322,111 @@ def test_missingsub():
     )
 
     assert response.status_code == 401
+
+def test_no_remote_user():
+    """
+    Tests if REMOTE_USER is correctly when no subject or issuer present
+    """
+    import jwt
+    from keys import PKEY
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/remote-user/env.sh",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode({ }, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+    assert f"REMOTE_USER=" not in response.text
+
+def test_subject_only_remote_user():
+    """
+    Tests if REMOTE_USER is correctly when subject is present
+    """
+    import jwt
+    from keys import PKEY
+
+    subject = "username"
+    payload = {
+        "sub": subject
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/remote-user/env.sh",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+    assert f"REMOTE_USER={subject}" in response.text
+
+def test_issuer_only_remote_user():
+    """
+    Tests if REMOTE_USER is absent when only issuer is present
+    """
+    import jwt
+    from keys import PKEY
+
+    payload = {
+        "iss": "issuer"
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/remote-user/env.sh",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+    assert "REMOTE_USER=" not in response.text
+
+def test_subject_and_issuer_remote_user():
+    """
+    Tests if REMOTE_USER is correctly when subject and issuer are present
+    """
+    import jwt
+    from keys import PKEY
+
+    subject = "username"
+    issuer = "place"
+    payload = {
+        "sub": subject,
+        "iss": issuer
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/remote-user/env.sh",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+    assert f"REMOTE_USER={subject}@{issuer}" in response.text
+
+def test__remote_user_scheme_removal():
+    """
+    Tests url-schemes are removed from REMOTE_USER
+    """
+    import jwt
+    from keys import PKEY
+
+    subject = "https://my-subject.com"
+    issuer = "my-issuer.com"
+    payload = {
+        "sub": f'{subject}',
+        "iss": f'https://{issuer}'
+    }
+
+    response = requests.get(
+        url = f"http://{LIGHTTPD}/remote-user/env.sh",
+        headers = {
+            'Authorization': f"Bearer {jwt.encode(payload, PKEY, algorithm="RS256")}"
+        }
+    )
+
+    assert response.status_code == 200
+    assert f"REMOTE_USER={subject}@{issuer}" in response.text
