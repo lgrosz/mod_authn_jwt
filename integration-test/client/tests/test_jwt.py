@@ -414,10 +414,10 @@ def test__remote_user_scheme_removal():
     import jwt
     from keys import PKEY
 
-    subject = "https://my-subject.com"
+    subject = "my-subject.com"
     issuer = "my-issuer.com"
     payload = {
-        "sub": f'{subject}',
+        "sub": f'https://{subject}',
         "iss": f'https://{issuer}'
     }
 

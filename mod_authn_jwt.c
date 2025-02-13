@@ -325,19 +325,34 @@ mod_authn_jwt_append_error_description (buffer * const b, const int rc)
   #endif
 }
 
+static const char *
+remove_url_scheme(const char *url)
+{
+    if (NULL == url) {
+        return NULL;
+    }
+
+    const char *scheme_end = strstr(url, "://");
+
+    // remove valid scheme
+    if (scheme_end && scheme_end != url) {
+        return scheme_end + 3;
+    }
+
+    return url;
+}
+
 static void
 mod_authn_jwt_set_remote_user (request_st * const r, jwt_t * const jwt)
 {
     // TODO add config option to specify label to retrieve for REMOTE_USER
     /* Apache mod_auth_openidc doc defaults REMOTE_USER to "[sub]@[iss]" */
-    const char *sub = jwt_get_grant(jwt, "sub");
+    const char *sub = remove_url_scheme(jwt_get_grant(jwt, "sub"));
     if (NULL == sub) return;
-    const char *iss = jwt_get_grant(jwt, "iss");
+    const char *iss = remove_url_scheme(jwt_get_grant(jwt, "iss"));
     if (!iss)
         http_auth_setenv(r, sub, strlen(sub), CONST_STR_LEN("Bearer"));
     else {
-        if (0 == strncmp(iss, "https://", sizeof("https://")-1))
-            iss += sizeof("https://")-1;
         buffer * const tb = r->tmp_buf;
         buffer_clear(tb);
         buffer_append_str3(tb,sub,strlen(sub),"@",1,iss,strlen(iss));
