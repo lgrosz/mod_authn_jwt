@@ -12,9 +12,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and build libjwt
-ADD https://github.com/benmcollins/libjwt/releases/download/v3.1.0/libjwt-3.1.0.tar.xz libjwt-3.1.0.tar.xz
-RUN tar -xJf libjwt-3.1.0.tar.xz
-RUN cmake -S libjwt-3.1.0 -B libjwt-build
+ADD https://github.com/benmcollins/libjwt/releases/download/v3.2.1/libjwt-3.2.1.tar.xz libjwt-3.2.1.tar.xz
+RUN tar -xJf libjwt-3.2.1.tar.xz
+RUN cmake -S libjwt-3.2.1 -B libjwt-build
 RUN cmake --build libjwt-build --target install
 
 # Download lighttpd
