@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: "benmcollins/libjwt"
-          ref: "v3.2.1"
+          ref: "v3.2.2"
           path: "libjwt"
       - name: Configure libjwt
         run: |
