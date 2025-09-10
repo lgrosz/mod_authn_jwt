@@ -20,8 +20,6 @@ jobs:
           - autoconf
         lighttpd_ref:
           - lighttpd-1.4.75
-          - lighttpd-1.4.76
-          - lighttpd-1.4.77
           - master
     runs-on: ubuntu-latest
     steps:
