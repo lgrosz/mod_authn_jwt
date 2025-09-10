@@ -2,6 +2,8 @@
 
 A JWT authentication module for Lighttpd.
 
+[![CI](https://github.com/lgrosz/mod_authn_jwt/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/lgrosz/mod_authn_jwt/actions/workflows/ci.yml)
+
 This module provides a scheme handler in accordance with [RFC 6750](https://datatracker.ietf.org/doc/html/rfc6750) and a backend in accordance with [RFC 7519](https://datatracker.ietf.org/doc/html/rfc7519).
 
 ## Requirements
