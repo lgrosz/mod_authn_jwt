@@ -1,8 +1,6 @@
 #!/bin/sh
 
-docker compose up --build --detach
-
-docker compose exec client pytest
+docker compose run --build --rm client pytest
 code=$?
 
 docker compose down --volumes
